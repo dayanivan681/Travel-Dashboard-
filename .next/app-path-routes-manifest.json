@@ -1,0 +1,7 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/api/ai/route": "/api/ai",
+  "/page": "/",
+  "/trips/[id]/page": "/trips/[id]",
+  "/settings/page": "/settings"
+}
