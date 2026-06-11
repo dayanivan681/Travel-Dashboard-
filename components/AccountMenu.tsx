@@ -4,6 +4,38 @@ import { useState } from "react";
 import { useAuth } from "@/lib/authContext";
 import { Field, Modal } from "@/components/ui";
 
+// Firebase auth errors surface as "Firebase: Error (auth/some-code)." —
+// translate the codes users actually hit into plain language.
+function friendlyAuthError(e: unknown): string {
+  const message = e instanceof Error ? e.message : "";
+  const code = message.match(/auth\/[\w-]+/)?.[0];
+  switch (code) {
+    case "auth/unauthorized-domain":
+      return `Sign-in isn't enabled for this site's address (${window.location.hostname}). The site owner needs to add it under Authentication → Settings → Authorized domains in the Firebase console.`;
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Incorrect email or password.";
+    case "auth/invalid-email":
+      return "That email address doesn't look valid.";
+    case "auth/email-already-in-use":
+      return "An account with this email already exists. Try signing in instead.";
+    case "auth/weak-password":
+      return "Password must be at least 6 characters.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Please wait a bit and try again.";
+    case "auth/popup-closed-by-user":
+    case "auth/cancelled-popup-request":
+      return "The Google sign-in window was closed before finishing.";
+    case "auth/popup-blocked":
+      return "Your browser blocked the sign-in popup. Allow popups for this site and try again.";
+    case "auth/network-request-failed":
+      return "Network error. Check your connection and try again.";
+    default:
+      return message.replace(/^Firebase:\s*/, "") || "Something went wrong.";
+  }
+}
+
 // Sign-in entry point in the header. Renders nothing if Firebase isn't
 // configured for this deployment (cloud sync is fully optional).
 export function AccountMenu() {
@@ -47,7 +79,7 @@ function AuthModal({ onClose }: { onClose: () => void }) {
       else await signUp(email.trim(), password);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message.replace(/^Firebase:\s*/, "") : "Something went wrong.");
+      setError(friendlyAuthError(e));
     } finally {
       setLoading(false);
     }
@@ -60,7 +92,7 @@ function AuthModal({ onClose }: { onClose: () => void }) {
       await signInWithGoogle();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message.replace(/^Firebase:\s*/, "") : "Something went wrong.");
+      setError(friendlyAuthError(e));
     } finally {
       setLoading(false);
     }
