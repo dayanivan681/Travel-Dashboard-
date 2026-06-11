@@ -5,7 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 // there is no server in between, which lets the whole app deploy as a static
 // site. Callers should check settings.aiEnabled && settings.apiKey first.
 
-const MODEL = "claude-opus-4-8";
+const MODEL = "claude-sonnet-4-6";
 
 const BOOKING_SCHEMA = {
   type: "object",
