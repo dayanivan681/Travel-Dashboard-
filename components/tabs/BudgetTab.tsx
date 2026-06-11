@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { tripPhase } from "@/lib/automation";
+import { convertAmount, sumExpenses, useFxRates } from "@/lib/fx";
 import { useStore } from "@/lib/store";
 import { Expense, ExpenseCategory, Trip } from "@/lib/types";
-import { daysBetween, fmtDate, fmtMoney, todayStr, uid } from "@/lib/utils";
+import { CURRENCIES, daysBetween, fmtDate, fmtMoney, todayStr, uid } from "@/lib/utils";
 import { EmptyState, Field, ProgressBar } from "@/components/ui";
 
 const CATEGORIES: ExpenseCategory[] = ["lodging", "transport", "food", "activities", "shopping", "other"];
@@ -20,6 +21,7 @@ const CAT_EMOJI: Record<ExpenseCategory, string> = {
 export function BudgetTab({ trip }: { trip: Trip }) {
   const { data, update } = useStore();
   const phase = tripPhase(trip, data.bookings);
+  const rates = useFxRates();
 
   const bookings = data.bookings.filter(
     (b) => b.tripId === trip.id && b.status !== "cancelled"
@@ -29,14 +31,18 @@ export function BudgetTab({ trip }: { trip: Trip }) {
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const committed = bookings.reduce((s, b) => s + (b.cost || 0), 0);
-  const spent = expenses.reduce((s, e) => s + e.amount, 0);
+  const spent = sumExpenses(expenses, trip.currency, rates);
   const total = committed + spent;
+  const hasForeign = expenses.some((e) => e.currency && e.currency !== trip.currency);
 
   const byCategory = useMemo(() => {
     const map = new Map<ExpenseCategory, number>();
-    for (const e of expenses) map.set(e.category, (map.get(e.category) || 0) + e.amount);
+    for (const e of expenses) {
+      const amt = convertAmount(e.amount, e.currency || trip.currency, trip.currency, rates);
+      map.set(e.category, (map.get(e.category) || 0) + amt);
+    }
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [expenses]);
+  }, [expenses, trip.currency, rates]);
 
   // Per-day burn rate while the trip is running.
   let perDay: number | undefined;
@@ -49,6 +55,7 @@ export function BudgetTab({ trip }: { trip: Trip }) {
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("food");
   const [date, setDate] = useState(todayStr());
+  const [currency, setCurrency] = useState(trip.currency);
 
   const add = () => {
     if (!desc.trim() || !amount) return;
@@ -59,6 +66,7 @@ export function BudgetTab({ trip }: { trip: Trip }) {
       description: desc.trim(),
       category,
       amount: Number(amount),
+      currency: currency !== trip.currency ? currency : undefined,
     };
     update((d) => ({ ...d, expenses: [...d.expenses, exp] }));
     setDesc("");
@@ -94,6 +102,13 @@ export function BudgetTab({ trip }: { trip: Trip }) {
                 <span> · averaging {fmtMoney(perDay, trip.currency)}/day</span>
               )}
             </div>
+            {hasForeign && (
+              <div className="mt-0.5 text-xs text-ink-400">
+                {rates
+                  ? "Foreign expenses converted at today's rates"
+                  : "Exchange rates unavailable — foreign amounts counted 1:1"}
+              </div>
+            )}
           </div>
           <Field label="Trip budget">
             <input
@@ -150,6 +165,13 @@ export function BudgetTab({ trip }: { trip: Trip }) {
         <Field label="Amount" className="w-24">
           <input type="number" className="input" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </Field>
+        <Field label="Currency" className="w-24">
+          <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            {(CURRENCIES.includes(trip.currency) ? CURRENCIES : [trip.currency, ...CURRENCIES]).map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </Field>
         <Field label="Category" className="w-32">
           <select className="input" value={category} onChange={(e) => setCategory(e.target.value as ExpenseCategory)}>
             {CATEGORIES.map((c) => (
@@ -178,7 +200,14 @@ export function BudgetTab({ trip }: { trip: Trip }) {
               <span>{CAT_EMOJI[e.category]}</span>
               <span className="flex-1">{e.description}</span>
               <span className="text-xs text-ink-400">{fmtDate(e.date)}</span>
-              <span className="w-24 text-right font-medium">{fmtMoney(e.amount, trip.currency)}</span>
+              <span className="text-right font-medium">
+                {fmtMoney(e.amount, e.currency || trip.currency)}
+                {e.currency && e.currency !== trip.currency && (
+                  <span className="block text-xs font-normal text-ink-400">
+                    ≈ {fmtMoney(convertAmount(e.amount, e.currency, trip.currency, rates), trip.currency)}
+                  </span>
+                )}
+              </span>
               <button className="btn-ghost px-1 text-xs text-red-400" onClick={() => remove(e.id)}>
                 ✕
               </button>

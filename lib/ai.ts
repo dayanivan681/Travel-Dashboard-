@@ -105,8 +105,12 @@ const CAPTURE_SCHEMA = {
         },
         amount: { type: "number", description: "Total amount actually paid" },
         date: { type: ["string", "null"], description: "YYYY-MM-DD" },
+        currency: {
+          type: ["string", "null"],
+          description: "ISO 4217 code (USD, EUR, JPY…) if identifiable from the text, else null",
+        },
       },
-      required: ["description", "category", "amount", "date"],
+      required: ["description", "category", "amount", "date", "currency"],
       additionalProperties: false,
     },
     idea: {
@@ -221,22 +225,52 @@ export async function aiRequest<T = unknown>(
 
       case "capture": {
         const rawText = String(payload?.rawText || "");
-        if (!rawText.trim()) throw new Error("Nothing to organize");
+        const image = payload?.image as { mediaType: string; data: string } | undefined;
+        if (!rawText.trim() && !image) throw new Error("Nothing to organize");
+        const content: Anthropic.ContentBlockParam[] = [];
+        if (image) {
+          content.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: image.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+              data: image.data,
+            },
+          });
+        }
+        content.push({
+          type: "text",
+          text: rawText.trim()
+            ? `Organize this:\n\n${rawText.slice(0, 20000)}`
+            : "Organize what's in this image (likely a receipt, confirmation, or screenshot of a recommendation).",
+        });
         const response = await client.messages.create({
           model: MODEL,
           max_tokens: 4096,
           thinking: { type: "adaptive" },
           system:
-            "You organize raw travel-related text — confirmation emails, receipts, screenshots transcribed to text, recommendations, or quick notes — for a trip planner. Classify it as exactly one kind and fill only that field; leave the others null. Dates are local time, formatted YYYY-MM-DD or YYYY-MM-DDTHH:MM. Costs are plain numbers in the currency mentioned (assume the trip's currency if unclear).",
+            "You organize raw travel-related content — confirmation emails, receipts (text or photographed), screenshots, recommendations, or quick notes — for a trip planner. Classify it as exactly one kind and fill only that field; leave the others null. Dates are local time, formatted YYYY-MM-DD or YYYY-MM-DDTHH:MM. Costs are plain numbers; report the currency as an ISO code when identifiable.",
           output_config: { format: { type: "json_schema", schema: CAPTURE_SCHEMA } },
+          messages: [{ role: "user", content }],
+        });
+        return { result: JSON.parse(textOf(response)) } as T;
+      }
+
+      case "dashboard-digest": {
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 1024,
+          thinking: { type: "adaptive" },
+          system:
+            "You are a calm, sharp travel assistant writing a morning-briefing style digest of the traveler's trips. Given trip summaries and open reminders, write 3-6 short lines: what's coming up next (with countdowns), what genuinely needs action this week, and budget standouts. Be specific and concrete, never generic. Plain text, one item per line prefixed with '- '. No preamble.",
           messages: [
             {
               role: "user",
-              content: `Organize this:\n\n${rawText.slice(0, 20000)}`,
+              content: `Today is ${String(payload?.today)}. Here are my trips and open reminders:\n\n${JSON.stringify(payload?.trips ?? [])}\n\nReminders: ${JSON.stringify(payload?.reminders ?? [])}`,
             },
           ],
         });
-        return { result: JSON.parse(textOf(response)) } as T;
+        return { content: textOf(response) } as T;
       }
 
       case "destination-briefing": {

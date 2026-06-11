@@ -122,6 +122,7 @@ export interface Expense {
   description: string;
   category: ExpenseCategory;
   amount: number;
+  currency?: string; // ISO code; absent = trip currency
 }
 
 export type ChecklistGroup = "packing" | "documents" | "todo";
@@ -157,6 +158,7 @@ export interface Settings {
   apiKey: string;
   profile: TravelerProfile;
   lastBackupAt?: string;
+  digest?: { content: string; generatedAt: string };
 }
 
 export interface AppData {
@@ -215,6 +217,7 @@ export interface CapturedExpense {
   category: ExpenseCategory;
   amount: number;
   date?: string;
+  currency?: string;
 }
 
 export interface CapturedIdea {

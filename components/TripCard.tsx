@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { PHASE_LABEL, tripPhase } from "@/lib/automation";
+import { sumExpenses, useFxRates } from "@/lib/fx";
 import { AppData, Trip, TripPhase } from "@/lib/types";
 import { daysBetween, fmtDate, fmtMoney, todayStr } from "@/lib/utils";
 import { Badge, ProgressBar } from "./ui";
@@ -14,15 +15,27 @@ const PHASE_TONE: Record<TripPhase, "gray" | "blue" | "green" | "amber" | "purpl
   completed: "amber",
 };
 
+// Soft accent tint for the emoji tile, keyed by phase.
+const PHASE_TILE: Record<TripPhase, string> = {
+  idea: "bg-ink-100",
+  planning: "bg-sky-50",
+  booked: "bg-violet-50",
+  active: "bg-emerald-50",
+  completed: "bg-amber-50",
+};
+
 export function TripCard({ trip, data }: { trip: Trip; data: AppData }) {
   const phase = tripPhase(trip, data.bookings);
+  const rates = useFxRates();
   const bookings = data.bookings.filter(
     (b) => b.tripId === trip.id && b.status !== "cancelled"
   );
   const committed = bookings.reduce((s, b) => s + (b.cost || 0), 0);
-  const spent = data.expenses
-    .filter((e) => e.tripId === trip.id)
-    .reduce((s, e) => s + e.amount, 0);
+  const spent = sumExpenses(
+    data.expenses.filter((e) => e.tripId === trip.id),
+    trip.currency,
+    rates
+  );
   const total = committed + spent;
 
   const today = todayStr();
@@ -39,8 +52,10 @@ export function TripCard({ trip, data }: { trip: Trip; data: AppData }) {
   return (
     <Link href={`/trip?id=${trip.id}`} className="card block p-4 transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">{trip.emoji}</span>
+        <div className="flex items-center gap-2.5">
+          <span className={`flex h-11 w-11 items-center justify-center rounded-xl text-2xl ${PHASE_TILE[phase]}`}>
+            {trip.emoji}
+          </span>
           <div>
             <div className="font-semibold leading-tight">{trip.name}</div>
             <div className="text-sm text-ink-500">{trip.destination}</div>

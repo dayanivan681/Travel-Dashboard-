@@ -143,6 +143,23 @@ export function buildReminders(data: AppData): Reminder[] {
     }
   }
 
+  // Backup hygiene — a global reminder (empty tripId links to Settings).
+  if (data.trips.length > 0) {
+    const last = data.settings.lastBackupAt;
+    const sinceBackup = last ? daysBetween(last.slice(0, 10), today) : Infinity;
+    if (sinceBackup > 14) {
+      out.push({
+        id: uid(),
+        tripId: "",
+        tripName: "Travel OS",
+        severity: "info",
+        text: last
+          ? `No backup in ${sinceBackup} days — export one from Settings`
+          : "Your trips live only in this browser — export a backup from Settings",
+      });
+    }
+  }
+
   const sevRank = { urgent: 0, warn: 1, info: 2 };
   return out.sort((a, b) => sevRank[a.severity] - sevRank[b.severity]);
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { aiRequest } from "@/lib/ai";
 import { buildReminders, tripPhase } from "@/lib/automation";
+import { sumExpenses, useFxRates } from "@/lib/fx";
 import { useStore } from "@/lib/store";
 import { Expense, ExpenseCategory, Trip } from "@/lib/types";
 import { daysBetween, fmtMoney, todayStr, uid } from "@/lib/utils";
@@ -19,13 +20,16 @@ export function OverviewTab({ trip }: { trip: Trip }) {
     [data, trip.id]
   );
 
+  const rates = useFxRates();
   const bookings = data.bookings.filter(
     (b) => b.tripId === trip.id && b.status !== "cancelled"
   );
   const committed = bookings.reduce((s, b) => s + (b.cost || 0), 0);
-  const spent = data.expenses
-    .filter((e) => e.tripId === trip.id)
-    .reduce((s, e) => s + e.amount, 0);
+  const spent = sumExpenses(
+    data.expenses.filter((e) => e.tripId === trip.id),
+    trip.currency,
+    rates
+  );
   const checklist = data.checklist.filter((c) => c.tripId === trip.id);
   const checklistDone = checklist.filter((c) => c.done).length;
 
@@ -188,9 +192,12 @@ function TodayPanel({ trip }: { trip: Trip }) {
     setAmount("");
   };
 
-  const spentToday = data.expenses
-    .filter((e) => e.tripId === trip.id && e.date === today)
-    .reduce((s, e) => s + e.amount, 0);
+  const ratesToday = useFxRates();
+  const spentToday = sumExpenses(
+    data.expenses.filter((e) => e.tripId === trip.id && e.date === today),
+    trip.currency,
+    ratesToday
+  );
 
   return (
     <section className="card border-emerald-200 bg-emerald-50/40 p-4">
