@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { tripPhase } from "@/lib/automation";
-import { convertAmount, sumExpenses, useFxRates } from "@/lib/fx";
+import { convertAmount, FxRates, sumExpenses, useFxRates } from "@/lib/fx";
 import { useStore } from "@/lib/store";
-import { Expense, ExpenseCategory, Trip } from "@/lib/types";
-import { CURRENCIES, daysBetween, fmtDate, fmtMoney, todayStr, uid } from "@/lib/utils";
+import { Expense, ExpenseCategory, Trip, TripPhase } from "@/lib/types";
+import { CURRENCIES, daysBetween, fmtDate, fmtDateShort, fmtMoney, todayStr, uid } from "@/lib/utils";
 import { EmptyState, Field, ProgressBar } from "@/components/ui";
 
 const CATEGORIES: ExpenseCategory[] = ["lodging", "transport", "food", "activities", "shopping", "other"];
@@ -132,6 +132,15 @@ export function BudgetTab({ trip }: { trip: Trip }) {
         ) : null}
       </div>
 
+      <SpendingInsights
+        trip={trip}
+        phase={phase}
+        expenses={expenses}
+        committed={committed}
+        spent={spent}
+        rates={rates}
+      />
+
       {byCategory.length > 0 && (
         <div className="card p-4">
           <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-500">
@@ -215,6 +224,120 @@ export function BudgetTab({ trip }: { trip: Trip }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+// Local spending analytics — no AI, instant, recomputed from the data:
+// daily-spend chart, end-of-trip projection, top category, biggest expense.
+function SpendingInsights({
+  trip,
+  phase,
+  expenses,
+  committed,
+  spent,
+  rates,
+}: {
+  trip: Trip;
+  phase: TripPhase;
+  expenses: Expense[];
+  committed: number;
+  spent: number;
+  rates: FxRates;
+}) {
+  const today = todayStr();
+
+  const stats = useMemo(() => {
+    if (expenses.length === 0) return null;
+
+    const byDay = new Map<string, number>();
+    let biggest: Expense | null = null;
+    let biggestConv = 0;
+    const byCat = new Map<ExpenseCategory, number>();
+    for (const e of expenses) {
+      const conv = convertAmount(e.amount, e.currency || trip.currency, trip.currency, rates);
+      byDay.set(e.date, (byDay.get(e.date) || 0) + conv);
+      byCat.set(e.category, (byCat.get(e.category) || 0) + conv);
+      if (conv > biggestConv) {
+        biggest = e;
+        biggestConv = conv;
+      }
+    }
+
+    const days = [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const chartDays = days.slice(-10);
+    const maxDay = Math.max(...chartDays.map(([, v]) => v), 1);
+
+    const topCat = [...byCat.entries()].sort((a, b) => b[1] - a[1])[0];
+    const topCatShare = spent > 0 ? Math.round((topCat[1] / spent) * 100) : 0;
+
+    // Projection: only meaningful mid-trip with dates.
+    let projection: number | undefined;
+    if (phase === "active" && trip.startDate && trip.endDate) {
+      const daysIn = daysBetween(trip.startDate, today) + 1;
+      const totalDays = daysBetween(trip.startDate, trip.endDate) + 1;
+      if (daysIn > 0 && totalDays >= daysIn) {
+        projection = committed + (spent / daysIn) * totalDays;
+      }
+    }
+
+    return { chartDays, maxDay, topCat, topCatShare, biggest, biggestConv, projection };
+  }, [expenses, trip.currency, trip.startDate, trip.endDate, phase, rates, committed, spent, today]);
+
+  if (!stats || (phase !== "active" && phase !== "completed") || expenses.length < 2) {
+    return null;
+  }
+
+  const overProjection =
+    stats.projection !== undefined && trip.budget !== undefined && stats.projection > trip.budget;
+
+  return (
+    <div className="card p-4">
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-500">
+        Spending insights
+      </h3>
+
+      <div className="flex h-20 items-end gap-1">
+        {stats.chartDays.map(([date, amt]) => (
+          <div key={date} className="group flex flex-1 flex-col items-center gap-1" title={`${fmtDateShort(date)} · ${fmtMoney(amt, trip.currency)}`}>
+            <div
+              className={`w-full rounded-t-md transition-colors ${date === today ? "bg-emerald-500" : "bg-ink-300 group-hover:bg-ink-500"}`}
+              style={{ height: `${Math.max(6, (amt / stats.maxDay) * 64)}px` }}
+            />
+            <div className="text-[10px] text-ink-400">{date.slice(8)}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+        {stats.projection !== undefined && (
+          <div>
+            <div className="text-xs uppercase tracking-wide text-ink-400">On pace for</div>
+            <div className={`font-semibold ${overProjection ? "text-red-600" : ""}`}>
+              {fmtMoney(stats.projection, trip.currency)}
+              {trip.budget ? (
+                <span className="font-normal text-ink-400"> / {fmtMoney(trip.budget, trip.currency)}</span>
+              ) : null}
+            </div>
+          </div>
+        )}
+        <div>
+          <div className="text-xs uppercase tracking-wide text-ink-400">Top category</div>
+          <div className="font-semibold capitalize">
+            {stats.topCat[0]}
+            <span className="font-normal text-ink-400"> · {stats.topCatShare}% of spend</span>
+          </div>
+        </div>
+        {stats.biggest && (
+          <div>
+            <div className="text-xs uppercase tracking-wide text-ink-400">Biggest expense</div>
+            <div className="truncate font-semibold">
+              {stats.biggest.description}
+              <span className="font-normal text-ink-400"> · {fmtMoney(stats.biggestConv, trip.currency)}</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

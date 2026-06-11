@@ -41,3 +41,49 @@
     @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
   }
 }
+
+/* Motion — small, fast, springy. Respect reduced-motion preferences. */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-modal {
+  animation: modal-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.anim-backdrop {
+  animation: backdrop-in 0.15s ease-out;
+}
+.anim-fade {
+  animation: fade-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-modal,
+  .anim-backdrop,
+  .anim-fade {
+    animation: none;
+  }
+}

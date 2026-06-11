@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { PHASE_LABEL, tripPhase } from "@/lib/automation";
 import { useStore } from "@/lib/store";
-import { Trip } from "@/lib/types";
+import { Trip, TripPhase } from "@/lib/types";
 import { CURRENCIES, fmtDate } from "@/lib/utils";
 import { BookingsTab } from "@/components/tabs/BookingsTab";
 import { BudgetTab } from "@/components/tabs/BudgetTab";
@@ -28,6 +28,16 @@ const TABS = [
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
+
+// Soft phase-keyed gradient behind the trip header — the page quietly
+// reflects where the trip is in its life.
+const PHASE_HERO: Record<TripPhase, string> = {
+  idea: "from-ink-100/80 to-transparent",
+  planning: "from-sky-100/70 to-transparent",
+  booked: "from-violet-100/70 to-transparent",
+  active: "from-emerald-100/70 to-transparent",
+  completed: "from-amber-100/70 to-transparent",
+};
 
 export default function TripPage() {
   return (
@@ -68,6 +78,9 @@ function TripPageInner() {
 
   return (
     <div className="space-y-5">
+      <div
+        className={`-mx-4 -mt-8 bg-gradient-to-b ${PHASE_HERO[phase]} px-4 pb-4 pt-8 sm:rounded-b-3xl`}
+      >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="text-4xl">{trip.emoji}</span>
@@ -94,6 +107,7 @@ function TripPageInner() {
           </button>
         </div>
       </div>
+      </div>
 
       <nav className="flex gap-1 overflow-x-auto border-b border-ink-200 pb-px">
         {TABS.map((t) => (
@@ -111,13 +125,15 @@ function TripPageInner() {
         ))}
       </nav>
 
-      {tab === "overview" && <OverviewTab trip={trip} />}
-      {tab === "ideas" && <IdeasTab trip={trip} />}
-      {tab === "decisions" && <DecisionsTab trip={trip} />}
-      {tab === "bookings" && <BookingsTab trip={trip} />}
-      {tab === "budget" && <BudgetTab trip={trip} />}
-      {tab === "itinerary" && <ItineraryTab trip={trip} />}
-      {tab === "checklist" && <ChecklistTab trip={trip} />}
+      <div key={tab} className="anim-fade">
+        {tab === "overview" && <OverviewTab trip={trip} />}
+        {tab === "ideas" && <IdeasTab trip={trip} />}
+        {tab === "decisions" && <DecisionsTab trip={trip} />}
+        {tab === "bookings" && <BookingsTab trip={trip} />}
+        {tab === "budget" && <BudgetTab trip={trip} />}
+        {tab === "itinerary" && <ItineraryTab trip={trip} />}
+        {tab === "checklist" && <ChecklistTab trip={trip} />}
+      </div>
 
       {editing && (
         <EditTripModal
