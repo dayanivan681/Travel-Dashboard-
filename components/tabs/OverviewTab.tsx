@@ -67,6 +67,8 @@ export function OverviewTab({ trip }: { trip: Trip }) {
         </div>
       </div>
 
+      <DestinationBriefing trip={trip} />
+
       {phase === "active" && <TodayPanel trip={trip} />}
 
       {reminders.length > 0 && (
@@ -97,6 +99,64 @@ export function OverviewTab({ trip }: { trip: Trip }) {
 
       {phase === "completed" && <RetroPanel trip={trip} />}
     </div>
+  );
+}
+
+// AI-generated local-knowledge briefing (money, customs, plugs, weather,
+// safety) for the destination — generated once and cached on the trip.
+function DestinationBriefing({ trip }: { trip: Trip }) {
+  const { data, update } = useStore();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const aiAvailable = data.settings.aiEnabled && data.settings.apiKey;
+
+  if (!aiAvailable && !trip.briefing) return null;
+
+  const generate = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await aiRequest<{ content: string }>("destination-briefing", data.settings.apiKey, {
+        trip,
+        profile: data.settings.profile,
+      });
+      update((d) => ({
+        ...d,
+        trips: d.trips.map((t) =>
+          t.id === trip.id
+            ? { ...t, briefing: { content: res.content, generatedAt: new Date().toISOString() } }
+            : t
+        ),
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate briefing");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="card p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-ink-500">
+          ✨ Destination briefing
+        </h3>
+        {aiAvailable && (
+          <button className="btn-ghost text-xs" onClick={generate} disabled={loading}>
+            {loading ? "Generating…" : trip.briefing ? "Regenerate" : "Generate"}
+          </button>
+        )}
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {trip.briefing ? (
+        <p className="whitespace-pre-line text-sm text-ink-700">{trip.briefing.content}</p>
+      ) : (
+        <p className="text-sm text-ink-500">
+          Get a quick local briefing for {trip.destination}: money & tipping,
+          plug type, customs, weather, and getting around.
+        </p>
+      )}
+    </section>
   );
 }
 

@@ -41,6 +41,7 @@ export default function SettingsPage() {
     a.download = `travel-os-export-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    update((d) => ({ ...d, settings: { ...d.settings, lastBackupAt: new Date().toISOString() } }));
   };
 
   const doImport = async (file: File) => {
@@ -65,6 +66,61 @@ export default function SettingsPage() {
               <option key={c}>{c}</option>
             ))}
           </select>
+        </Field>
+      </section>
+
+      <section className="card space-y-3 p-5">
+        <h2 className="font-semibold">🧳 Traveler profile</h2>
+        <p className="text-sm text-ink-500">
+          Used to personalize AI itinerary suggestions and destination
+          briefings — pace, interests, dietary needs, and travel style.
+        </p>
+        <Field label="Pace">
+          <select
+            className="input w-40"
+            value={settings.profile.pace}
+            onChange={(e) =>
+              setSettings({ profile: { ...settings.profile, pace: e.target.value as typeof settings.profile.pace } })
+            }
+          >
+            <option value="relaxed">Relaxed</option>
+            <option value="balanced">Balanced</option>
+            <option value="packed">Packed</option>
+          </select>
+        </Field>
+        <Field label="Interests (comma-separated)">
+          <input
+            className="input"
+            placeholder="food, art, hiking, nightlife"
+            value={settings.profile.interests.join(", ")}
+            onChange={(e) =>
+              setSettings({
+                profile: {
+                  ...settings.profile,
+                  interests: e.target.value
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                },
+              })
+            }
+          />
+        </Field>
+        <Field label="Dietary needs">
+          <input
+            className="input"
+            placeholder="vegetarian, no shellfish…"
+            value={settings.profile.dietary}
+            onChange={(e) => setSettings({ profile: { ...settings.profile, dietary: e.target.value } })}
+          />
+        </Field>
+        <Field label="Travel style">
+          <input
+            className="input"
+            placeholder="boutique hotels, avoid tourist traps, love local markets…"
+            value={settings.profile.travelStyle}
+            onChange={(e) => setSettings({ profile: { ...settings.profile, travelStyle: e.target.value } })}
+          />
         </Field>
       </section>
 
@@ -161,6 +217,11 @@ export default function SettingsPage() {
           )}
         </div>
         {importMessage && <p className="text-sm text-ink-600">{importMessage}</p>}
+        <p className="text-xs text-ink-400">
+          {settings.lastBackupAt
+            ? `Last backup: ${new Date(settings.lastBackupAt).toLocaleString()}`
+            : "No backup taken yet — export one to keep your trips safe."}
+        </p>
       </section>
     </div>
   );

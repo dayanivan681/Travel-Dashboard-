@@ -14,6 +14,7 @@ import { DecisionsTab } from "@/components/tabs/DecisionsTab";
 import { IdeasTab } from "@/components/tabs/IdeasTab";
 import { ItineraryTab } from "@/components/tabs/ItineraryTab";
 import { OverviewTab } from "@/components/tabs/OverviewTab";
+import { QuickCapture } from "@/components/QuickCapture";
 import { Badge, Field, Modal } from "@/components/ui";
 
 const TABS = [
@@ -47,6 +48,7 @@ function TripPageInner() {
     requested && TABS.some((t) => t.key === requested) ? requested : "overview"
   );
   const [editing, setEditing] = useState(false);
+  const [capturing, setCapturing] = useState(false);
 
   if (!hydrated) return null;
 
@@ -83,9 +85,14 @@ function TripPageInner() {
             </p>
           </div>
         </div>
-        <button className="btn-secondary" onClick={() => setEditing(true)}>
-          Edit trip
-        </button>
+        <div className="flex gap-2">
+          <button className="btn-primary" onClick={() => setCapturing(true)}>
+            ✨ Quick add
+          </button>
+          <button className="btn-secondary" onClick={() => setEditing(true)}>
+            Edit trip
+          </button>
+        </div>
       </div>
 
       <nav className="flex gap-1 overflow-x-auto border-b border-ink-200 pb-px">
@@ -119,6 +126,7 @@ function TripPageInner() {
           onDeleted={() => router.push("/")}
         />
       )}
+      {capturing && <QuickCapture trip={trip} onClose={() => setCapturing(false)} />}
     </div>
   );
 }

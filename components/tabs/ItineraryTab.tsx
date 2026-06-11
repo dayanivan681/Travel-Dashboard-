@@ -84,6 +84,7 @@ export function ItineraryTab({ trip }: { trip: Trip }) {
             .filter((b) => b.tripId === trip.id && b.status !== "cancelled")
             .map((b) => ({ type: b.type, title: b.title, start: b.start, end: b.end, location: b.location })),
           plannedDates,
+          profile: data.settings.profile,
         }
       );
       setAiPlan(res.plan.days);

@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import Link from "next/link";
 import { StoreProvider } from "@/lib/store";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Travel OS",
@@ -16,11 +19,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
+      <body className={`${inter.variable} font-sans`}>
         <StoreProvider>
-          <header className="sticky top-0 z-40 border-b border-ink-200 bg-white/90 backdrop-blur">
-            <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-              <Link href="/" className="flex items-center gap-2 font-semibold">
+          <header className="sticky top-0 z-40 border-b border-ink-200/70 bg-white/80 backdrop-blur-md">
+            <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
+              <Link href="/" className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
                 <span className="text-xl">🧭</span>
                 <span>Travel OS</span>
                 <span className="hidden text-xs font-normal text-ink-400 sm:inline">
@@ -37,7 +40,7 @@ export default function RootLayout({
               </nav>
             </div>
           </header>
-          <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+          <main className="mx-auto max-w-5xl px-4 py-8">{children}</main>
         </StoreProvider>
       </body>
     </html>

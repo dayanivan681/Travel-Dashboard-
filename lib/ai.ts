@@ -67,6 +67,68 @@ const ITINERARY_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const CAPTURE_SCHEMA = {
+  type: "object",
+  properties: {
+    kind: {
+      type: "string",
+      enum: ["booking", "expense", "idea", "note"],
+      description:
+        "'booking' for a confirmed reservation (flight, hotel, car, train, activity, restaurant) with details like dates or a confirmation code; 'expense' for a receipt or payment already made; 'idea' for a place, activity, or recommendation worth considering; 'note' for anything else worth remembering.",
+    },
+    booking: {
+      type: ["object", "null"],
+      properties: {
+        type: {
+          type: "string",
+          enum: ["flight", "hotel", "car", "train", "activity", "restaurant", "other"],
+        },
+        title: { type: "string" },
+        provider: { type: ["string", "null"] },
+        confirmationCode: { type: ["string", "null"] },
+        start: { type: ["string", "null"], description: "YYYY-MM-DD or YYYY-MM-DDTHH:MM" },
+        end: { type: ["string", "null"] },
+        location: { type: ["string", "null"] },
+        cost: { type: ["number", "null"] },
+        notes: { type: ["string", "null"] },
+      },
+      required: ["type", "title", "provider", "confirmationCode", "start", "end", "location", "cost", "notes"],
+      additionalProperties: false,
+    },
+    expense: {
+      type: ["object", "null"],
+      properties: {
+        description: { type: "string" },
+        category: {
+          type: "string",
+          enum: ["lodging", "transport", "food", "activities", "shopping", "other"],
+        },
+        amount: { type: "number", description: "Total amount actually paid" },
+        date: { type: ["string", "null"], description: "YYYY-MM-DD" },
+      },
+      required: ["description", "category", "amount", "date"],
+      additionalProperties: false,
+    },
+    idea: {
+      type: ["object", "null"],
+      properties: {
+        title: { type: "string" },
+        category: {
+          type: "string",
+          enum: ["place", "activity", "food", "stay", "transport", "other"],
+        },
+        notes: { type: ["string", "null"] },
+        estCost: { type: ["number", "null"] },
+      },
+      required: ["title", "category", "notes", "estCost"],
+      additionalProperties: false,
+    },
+    note: { type: ["string", "null"] },
+  },
+  required: ["kind", "booking", "expense", "idea", "note"],
+  additionalProperties: false,
+} as const;
+
 function makeClient(apiKey: string): Anthropic {
   return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 }
@@ -132,21 +194,76 @@ export async function aiRequest<T = unknown>(
       case "suggest-itinerary": {
         const trip = payload?.trip;
         if (!trip) throw new Error("Missing trip");
+        const profile = payload?.profile as Record<string, unknown> | undefined;
+        const profileLine = profile
+          ? `Traveler profile — pace: ${profile.pace || "balanced"}; interests: ${
+              Array.isArray(profile.interests) && profile.interests.length
+                ? (profile.interests as string[]).join(", ")
+                : "none specified"
+            }; dietary needs: ${profile.dietary || "none"}; travel style: ${profile.travelStyle || "none specified"}.`
+          : "";
         const response = await client.messages.create({
           model: MODEL,
           max_tokens: 16000,
           thinking: { type: "adaptive" },
           system:
-            "You are a practical travel planner. Build realistic day-by-day itineraries: respect existing fixed commitments (flights, check-ins, reservations), group activities by neighborhood to minimize transit, pace 2-4 substantial things per day with meal slots, and weave in the traveler's own shortlisted ideas before inventing new ones. Every suggestion gets a one-line note explaining why or how. Only plan dates within the trip range that were requested.",
+            "You are a practical travel planner. Build realistic day-by-day itineraries: respect existing fixed commitments (flights, check-ins, reservations), group activities by neighborhood to minimize transit, pace 2-4 substantial things per day with meal slots, and weave in the traveler's own shortlisted ideas before inventing new ones. Tailor suggestions to the traveler's stated profile (pace, interests, dietary needs, travel style) when given. Every suggestion gets a one-line note explaining why or how. Only plan dates within the trip range that were requested.",
           output_config: { format: { type: "json_schema", schema: ITINERARY_SCHEMA } },
           messages: [
             {
               role: "user",
-              content: `Plan an itinerary for this trip.\n\nTrip: ${JSON.stringify(trip)}\n\nShortlisted/approved ideas (use these first): ${JSON.stringify(payload?.ideas ?? [])}\n\nExisting fixed bookings (do not duplicate, plan around them): ${JSON.stringify(payload?.bookings ?? [])}\n\nDates already planned (only fill the empty days): ${JSON.stringify(payload?.plannedDates ?? [])}\n\nExtra instructions from the traveler: ${String(payload?.instructions || "none")}`,
+              content: `Plan an itinerary for this trip.\n\nTrip: ${JSON.stringify(trip)}\n\n${profileLine}\n\nShortlisted/approved ideas (use these first): ${JSON.stringify(payload?.ideas ?? [])}\n\nExisting fixed bookings (do not duplicate, plan around them): ${JSON.stringify(payload?.bookings ?? [])}\n\nDates already planned (only fill the empty days): ${JSON.stringify(payload?.plannedDates ?? [])}\n\nExtra instructions from the traveler: ${String(payload?.instructions || "none")}`,
             },
           ],
         });
         return { plan: JSON.parse(textOf(response)) } as T;
+      }
+
+      case "capture": {
+        const rawText = String(payload?.rawText || "");
+        if (!rawText.trim()) throw new Error("Nothing to organize");
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 4096,
+          thinking: { type: "adaptive" },
+          system:
+            "You organize raw travel-related text — confirmation emails, receipts, screenshots transcribed to text, recommendations, or quick notes — for a trip planner. Classify it as exactly one kind and fill only that field; leave the others null. Dates are local time, formatted YYYY-MM-DD or YYYY-MM-DDTHH:MM. Costs are plain numbers in the currency mentioned (assume the trip's currency if unclear).",
+          output_config: { format: { type: "json_schema", schema: CAPTURE_SCHEMA } },
+          messages: [
+            {
+              role: "user",
+              content: `Organize this:\n\n${rawText.slice(0, 20000)}`,
+            },
+          ],
+        });
+        return { result: JSON.parse(textOf(response)) } as T;
+      }
+
+      case "destination-briefing": {
+        const trip = payload?.trip as Record<string, unknown> | undefined;
+        if (!trip) throw new Error("Missing trip");
+        const profile = payload?.profile as Record<string, unknown> | undefined;
+        const profileLine = profile
+          ? `Traveler profile — interests: ${
+              Array.isArray(profile.interests) && profile.interests.length
+                ? (profile.interests as string[]).join(", ")
+                : "none specified"
+            }; dietary needs: ${profile.dietary || "none"}; travel style: ${profile.travelStyle || "none specified"}.`
+          : "";
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 2048,
+          thinking: { type: "adaptive" },
+          system:
+            "You write short, sharp destination briefings for travelers. Cover only what's genuinely useful and specific to this destination: local currency & typical costs, tipping norms, power plug type & voltage, key cultural etiquette or customs, safety notes, typical weather for the travel dates, and getting around. Tailor a couple of points to the traveler's profile if given. Plain text, organized as short labeled sections (e.g. 'Money:', 'Customs:'), each 1-2 sentences. No headers, no markdown, no preamble.",
+          messages: [
+            {
+              role: "user",
+              content: `Destination: ${trip.destination}\nDates: ${trip.startDate || "unspecified"} to ${trip.endDate || "unspecified"}\nTravelers: ${trip.travelers}\n${profileLine}`,
+            },
+          ],
+        });
+        return { content: textOf(response) } as T;
       }
 
       case "trip-insights": {
