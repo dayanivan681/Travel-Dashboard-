@@ -6,6 +6,7 @@ import { syncBookingToItinerary } from "@/lib/automation";
 import { useStore } from "@/lib/store";
 import { Booking, BookingStatus, ParsedBooking, Trip } from "@/lib/types";
 import { fmtDateTime, fmtMoney, todayStr, uid } from "@/lib/utils";
+import { EmailSync } from "@/components/EmailSync";
 import { PreviewForm, SmartImport } from "@/components/SmartImport";
 import { Badge, BOOKING_TYPE_EMOJI, EmptyState, Modal } from "@/components/ui";
 
@@ -34,6 +35,7 @@ export function BookingsTab({ trip }: { trip: Trip }) {
     .sort((a, b) => (a.start || "9999").localeCompare(b.start || "9999"));
 
   const [importing, setImporting] = useState(false);
+  const [scanningInbox, setScanningInbox] = useState(false);
   const [addingManual, setAddingManual] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [findings, setFindings] = useState<ReviewFinding[] | null>(null);
@@ -140,8 +142,11 @@ export function BookingsTab({ trip }: { trip: Trip }) {
           <button className="btn-secondary" onClick={() => setAddingManual(true)}>
             + Add manually
           </button>
-          <button className="btn-primary" onClick={() => setImporting(true)}>
-            📥 Import from email
+          <button className="btn-secondary" onClick={() => setImporting(true)}>
+            📥 Paste email
+          </button>
+          <button className="btn-primary" onClick={() => setScanningInbox(true)}>
+            📬 Scan inbox
           </button>
         </div>
       </div>
@@ -236,6 +241,7 @@ export function BookingsTab({ trip }: { trip: Trip }) {
       {importing && (
         <SmartImport onClose={() => setImporting(false)} onParsed={saveBooking} />
       )}
+      {scanningInbox && <EmailSync trip={trip} onClose={() => setScanningInbox(false)} />}
       {addingManual && (
         <Modal title="Add booking" onClose={() => setAddingManual(false)} wide>
           <PreviewForm

@@ -264,6 +264,68 @@ const CHECKLIST_GEN_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const EMAIL_SCAN_SCHEMA = {
+  type: "object",
+  properties: {
+    results: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          emailIndex: { type: "number", description: "Index of the email in the input list" },
+          kind: {
+            type: "string",
+            enum: ["booking", "expense", "skip"],
+            description:
+              "'booking' for a reservation confirmation or schedule change (flight, hotel, car, train, activity, restaurant); 'expense' for a receipt/invoice for a payment already made that is NOT itself a reservation; 'skip' for marketing, newsletters, unrelated mail, or duplicates of existing bookings.",
+          },
+          booking: {
+            type: ["object", "null"],
+            properties: {
+              type: {
+                type: "string",
+                enum: ["flight", "hotel", "car", "train", "activity", "restaurant", "other"],
+              },
+              title: { type: "string" },
+              provider: { type: ["string", "null"] },
+              confirmationCode: { type: ["string", "null"] },
+              start: { type: ["string", "null"], description: "YYYY-MM-DD or YYYY-MM-DDTHH:MM" },
+              end: { type: ["string", "null"] },
+              location: { type: ["string", "null"] },
+              cost: { type: ["number", "null"] },
+              notes: {
+                type: ["string", "null"],
+                description: "Key details; if this is a schedule change, start with 'Schedule change:'",
+              },
+            },
+            required: ["type", "title", "provider", "confirmationCode", "start", "end", "location", "cost", "notes"],
+            additionalProperties: false,
+          },
+          expense: {
+            type: ["object", "null"],
+            properties: {
+              description: { type: "string" },
+              category: {
+                type: "string",
+                enum: ["lodging", "transport", "food", "activities", "shopping", "other"],
+              },
+              amount: { type: "number" },
+              date: { type: ["string", "null"], description: "YYYY-MM-DD" },
+              currency: { type: ["string", "null"], description: "ISO 4217 code if identifiable" },
+            },
+            required: ["description", "category", "amount", "date", "currency"],
+            additionalProperties: false,
+          },
+        },
+        required: ["emailIndex", "kind", "booking", "expense"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["results"],
+  additionalProperties: false,
+} as const;
+
 function makeClient(apiKey: string): Anthropic {
   return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 }
@@ -324,6 +386,33 @@ export async function aiRequest<T = unknown>(
           ],
         });
         return { booking: JSON.parse(textOf(response)) } as T;
+      }
+
+      case "scan-emails": {
+        const emails = payload?.emails as Array<{ subject: string; from: string; date: string; body: string }> | undefined;
+        if (!emails?.length) throw new Error("No emails to scan");
+        const trip = payload?.trip as Record<string, unknown> | undefined;
+        const emailList = emails
+          .map(
+            (e, i) =>
+              `--- EMAIL ${i} ---\nFrom: ${e.from}\nDate: ${e.date}\nSubject: ${e.subject}\n\n${e.body.slice(0, 4000)}`
+          )
+          .join("\n\n");
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 16000,
+          thinking: { type: "adaptive" },
+          system:
+            "You scan a traveler's emails for items relevant to one specific trip. For each email decide: 'booking' if it confirms or changes a reservation (flight, hotel, car, train, activity, restaurant) relevant to this trip; 'expense' if it's a receipt or invoice for a trip-related payment that isn't itself a reservation; 'skip' for marketing, newsletters, mail unrelated to this trip's destination/dates, or emails whose confirmation code matches an already-imported booking. Only extract fields explicitly supported by the email text — use null for anything absent. Dates are local time, formatted YYYY-MM-DD or YYYY-MM-DDTHH:MM. Cost/amount is the grand total. Return one result per email, in order.",
+          output_config: { format: { type: "json_schema", schema: EMAIL_SCAN_SCHEMA } },
+          messages: [
+            {
+              role: "user",
+              content: `Trip: ${JSON.stringify(trip ?? {})}\n\nConfirmation codes already imported (mark matching emails as 'skip'): ${JSON.stringify(payload?.existingCodes ?? [])}\n\nEmails to scan:\n\n${emailList}`,
+            },
+          ],
+        });
+        return JSON.parse(textOf(response)) as T;
       }
 
       case "suggest-itinerary": {
