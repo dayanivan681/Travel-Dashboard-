@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { aiRequest } from "@/lib/ai";
+import { useAuth } from "@/lib/authContext";
 import { getSnapshotData, listSnapshots, SnapshotMeta } from "@/lib/backup";
 import { useStore } from "@/lib/store";
 import { CURRENCIES } from "@/lib/utils";
@@ -69,6 +70,8 @@ export default function SettingsPage() {
           </select>
         </Field>
       </section>
+
+      <CloudSyncSection />
 
       <section className="card space-y-3 p-5">
         <h2 className="font-semibold">🧳 Traveler profile</h2>
@@ -227,6 +230,41 @@ export default function SettingsPage() {
 
       <SnapshotsSection />
     </div>
+  );
+}
+
+// Cloud sync status. Sign-in itself happens via the account menu in the
+// header — this section just explains what it does and shows current state.
+function CloudSyncSection() {
+  const { user, authReady, firebaseEnabled } = useAuth();
+  const { data, hydrated } = useStore();
+
+  if (!firebaseEnabled) return null;
+
+  const synced = hydrated ? data.trips.filter((t) => t.memberEmails).length : 0;
+
+  return (
+    <section className="card space-y-2 p-5">
+      <h2 className="font-semibold">☁️ Cloud sync &amp; sharing</h2>
+      {!authReady ? null : user ? (
+        <>
+          <p className="text-sm text-ink-500">
+            Signed in as <span className="font-medium text-ink-700">{user.email}</span>. Your
+            trips sync automatically across devices — {synced} of {data.trips.length} trip
+            {data.trips.length === 1 ? "" : "s"} synced so far.
+          </p>
+          <p className="text-sm text-ink-500">
+            Open any trip and use <span className="font-medium">👥 Share</span> to invite up to
+            5 travelers by email — they&apos;ll see and edit the same trip once they sign in.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-ink-500">
+          Sign in (top right) to back up your trips to the cloud, sync them across devices, and
+          share a trip with up to 5 travelers.
+        </p>
+      )}
+    </section>
   );
 }
 

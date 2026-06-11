@@ -18,6 +18,12 @@ export interface Trip {
   retro?: { wins: string; improvements: string };
   briefing?: { content: string; generatedAt: string };
   createdAt: string;
+  // Cloud sync (Phase 2): present once a trip has been synced to Firestore.
+  // ownerId is the creator's uid; memberEmails (lowercased) controls who can
+  // read/write the trip — up to 5 travelers can share a trip this way.
+  ownerId?: string;
+  memberEmails?: string[];
+  updatedAt?: string;
 }
 
 export type IdeaCategory =
