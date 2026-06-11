@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { aiRequest } from "@/lib/ai";
 import { syncBookingToItinerary } from "@/lib/automation";
 import { useStore } from "@/lib/store";
-import { Booking, Decision, DecisionOption, Trip } from "@/lib/types";
+import { Booking, Decision, DecisionAdvice, DecisionOption, Trip } from "@/lib/types";
 import { fmtMoney, uid } from "@/lib/utils";
 import { Badge, EmptyState, Field, Modal } from "@/components/ui";
 
@@ -60,8 +61,11 @@ export function DecisionsTab({ trip }: { trip: Trip }) {
 }
 
 function DecisionCard({ decision, trip }: { decision: Decision; trip: Trip }) {
-  const { update } = useStore();
+  const { data, update } = useStore();
   const [adding, setAdding] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const aiAvailable = data.settings.aiEnabled && data.settings.apiKey;
 
   const patch = (p: Partial<Decision>) =>
     update((d) => ({
@@ -101,6 +105,55 @@ function DecisionCard({ decision, trip }: { decision: Decision; trip: Trip }) {
 
   const winner = decision.options.find((o) => o.id === decision.decidedOptionId);
 
+  const analyze = async () => {
+    setAnalyzing(true);
+    setAiError("");
+    try {
+      const res = await aiRequest<{ advice: Omit<DecisionAdvice, "generatedAt"> }>(
+        "recommend-decision",
+        data.settings.apiKey,
+        {
+          decision: {
+            title: decision.title,
+            notes: decision.notes,
+            options: decision.options.map((o) => ({
+              id: o.id,
+              name: o.name,
+              cost: o.cost,
+              rating: o.rating,
+              pros: o.pros,
+              cons: o.cons,
+              notes: o.notes,
+            })),
+          },
+          trip: {
+            destination: trip.destination,
+            startDate: trip.startDate,
+            endDate: trip.endDate,
+            travelers: trip.travelers,
+            budget: trip.budget,
+            currency: trip.currency,
+          },
+          bookings: data.bookings
+            .filter((b) => b.tripId === trip.id && b.status !== "cancelled")
+            .map((b) => ({ type: b.type, title: b.title, start: b.start, end: b.end, location: b.location, cost: b.cost })),
+          profile: data.settings.profile,
+        }
+      );
+      patch({ ai: { ...res.advice, generatedAt: new Date().toISOString() } });
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const advice = decision.ai;
+  const recommended =
+    advice && decision.options.find((o) => o.id === advice.recommendedOptionId);
+  const takeFor = (optId: string) =>
+    advice?.assessments.find((a) => a.optionId === optId)?.take;
+
   return (
     <div className="card p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -113,6 +166,11 @@ function DecisionCard({ decision, trip }: { decision: Decision; trip: Trip }) {
           )}
         </div>
         <div className="flex gap-1">
+          {decision.status === "open" && decision.options.length >= 2 && aiAvailable && (
+            <button className="btn-secondary text-xs" onClick={analyze} disabled={analyzing}>
+              {analyzing ? "Weighing…" : advice ? "✨ Re-analyze" : "✨ AI recommend"}
+            </button>
+          )}
           {decision.status === "decided" ? (
             <button className="btn-ghost text-xs" onClick={reopen}>
               Reopen
@@ -127,6 +185,26 @@ function DecisionCard({ decision, trip }: { decision: Decision; trip: Trip }) {
           </button>
         </div>
       </div>
+
+      {aiError && <p className="mb-2 text-sm text-red-600">{aiError}</p>}
+      {advice && decision.status === "open" && (
+        <div className="mb-3 rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-violet-800">
+              ✨ Recommends: {recommended?.name || "—"}
+            </span>
+            <Badge tone={advice.confidence === "high" ? "green" : advice.confidence === "medium" ? "amber" : "gray"}>
+              {advice.confidence} confidence
+            </Badge>
+          </div>
+          <p className="mt-1 text-violet-900/80">{advice.summary}</p>
+          {recommended && (
+            <button className="btn-primary mt-2 text-xs" onClick={() => decide(recommended.id)}>
+              Go with {recommended.name}
+            </button>
+          )}
+        </div>
+      )}
 
       {decision.options.length === 0 ? (
         <p className="text-sm text-ink-400">No options yet — add the candidates you're comparing.</p>
@@ -176,6 +254,11 @@ function DecisionCard({ decision, trip }: { decision: Decision; trip: Trip }) {
                   <a href={opt.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs text-sky-600 hover:underline">
                     {opt.url}
                   </a>
+                )}
+                {decision.status === "open" && takeFor(opt.id) && (
+                  <p className="mt-2 rounded bg-violet-50 px-2 py-1 text-xs text-violet-700">
+                    ✨ {takeFor(opt.id)}
+                  </p>
                 )}
                 <div className="mt-3 flex gap-1">
                   {decision.status === "open" && (

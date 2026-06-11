@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { aiRequest } from "@/lib/ai";
 import { buildReminders, PHASE_LABEL, PHASE_ORDER, tripPhase } from "@/lib/automation";
+import { getSnapshotData, listSnapshots, SnapshotMeta } from "@/lib/backup";
 import { useStore } from "@/lib/store";
 import { CHECKLIST_TEMPLATES } from "@/lib/templates";
 import { ChecklistItem, Trip, TripPhase } from "@/lib/types";
@@ -57,6 +58,8 @@ export default function Dashboard() {
         </section>
       )}
 
+      {data.trips.length === 0 && <RecoveryBanner />}
+
       {data.trips.length === 0 ? (
         <EmptyState
           emoji="🗺️"
@@ -87,6 +90,48 @@ export default function Dashboard() {
       )}
 
       {creating && <NewTripModal onClose={() => setCreating(false)} />}
+    </div>
+  );
+}
+
+// Shown only when the live data is empty: if an automatic snapshot still has
+// trips in it, the data was probably lost rather than never created — offer
+// one-click recovery.
+function RecoveryBanner() {
+  const { importJson } = useStore();
+  const [snapshot, setSnapshot] = useState<SnapshotMeta | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    listSnapshots().then((snaps) => {
+      const withTrips = snaps.find((s) => s.trips > 0);
+      if (withTrips) setSnapshot(withTrips);
+    });
+  }, []);
+
+  if (!snapshot) return null;
+
+  const restore = async () => {
+    const data = await getSnapshotData(snapshot.takenAt);
+    if (!data) {
+      setError("Couldn't read the snapshot — check Settings for older ones.");
+      return;
+    }
+    const result = importJson(JSON.stringify(data));
+    if (!result.ok) setError(result.error || "Restore failed.");
+  };
+
+  return (
+    <div className="card flex flex-wrap items-center justify-between gap-3 border-amber-200 bg-amber-50 p-4">
+      <div className="text-sm text-amber-900">
+        <span className="font-medium">🛟 Found a recovery snapshot</span> from{" "}
+        {new Date(snapshot.takenAt).toLocaleString()} with {snapshot.trips} trip
+        {snapshot.trips === 1 ? "" : "s"} — your data may have been cleared.
+        {error && <span className="block text-red-600">{error}</span>}
+      </div>
+      <button className="btn-primary" onClick={restore}>
+        Restore it
+      </button>
     </div>
   );
 }

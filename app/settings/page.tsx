@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { aiRequest } from "@/lib/ai";
+import { getSnapshotData, listSnapshots, SnapshotMeta } from "@/lib/backup";
 import { useStore } from "@/lib/store";
 import { CURRENCIES } from "@/lib/utils";
 import { Field } from "@/components/ui";
@@ -223,6 +224,84 @@ export default function SettingsPage() {
             : "No backup taken yet — export one to keep your trips safe."}
         </p>
       </section>
+
+      <SnapshotsSection />
     </div>
+  );
+}
+
+// Automatic recovery snapshots, written to IndexedDB as you work. Restoring
+// replaces the current data with the snapshot's contents.
+function SnapshotsSection() {
+  const { importJson } = useStore();
+  const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+
+  const refresh = () => listSnapshots().then(setSnapshots);
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const restore = async (takenAt: string) => {
+    const data = await getSnapshotData(takenAt);
+    setConfirming(null);
+    if (!data) {
+      setMessage("Couldn't read that snapshot.");
+      return;
+    }
+    const result = importJson(JSON.stringify(data));
+    setMessage(
+      result.ok
+        ? `Restored snapshot from ${new Date(takenAt).toLocaleString()}.`
+        : result.error || "Restore failed."
+    );
+  };
+
+  return (
+    <section className="card space-y-3 p-5">
+      <h2 className="font-semibold">🛟 Automatic snapshots</h2>
+      <p className="text-sm text-ink-500">
+        Travel OS quietly saves recovery snapshots in this browser as you
+        work. If something goes wrong — a bad import, an accidental delete —
+        restore from here. (Clearing all browser data removes these too;
+        the export above is the off-device backup.)
+      </p>
+      {snapshots.length === 0 ? (
+        <p className="text-sm text-ink-400">
+          No snapshots yet — they appear automatically once you have trip data.
+        </p>
+      ) : (
+        <ul className="divide-y divide-ink-100">
+          {snapshots.slice(0, 8).map((s) => (
+            <li key={s.takenAt} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <div>
+                <div className="font-medium">{new Date(s.takenAt).toLocaleString()}</div>
+                <div className="text-xs text-ink-400">
+                  {s.trips} trip{s.trips === 1 ? "" : "s"} · {s.bookings} booking
+                  {s.bookings === 1 ? "" : "s"} · {s.expenses} expense{s.expenses === 1 ? "" : "s"}
+                </div>
+              </div>
+              {confirming === s.takenAt ? (
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-red-600">Replace current data?</span>
+                  <button className="btn-danger text-xs" onClick={() => restore(s.takenAt)}>
+                    Yes, restore
+                  </button>
+                  <button className="btn-ghost text-xs" onClick={() => setConfirming(null)}>
+                    No
+                  </button>
+                </span>
+              ) : (
+                <button className="btn-secondary text-xs" onClick={() => setConfirming(s.takenAt)}>
+                  Restore
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {message && <p className="text-sm text-ink-600">{message}</p>}
+    </section>
   );
 }

@@ -1,11 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { aiRequest } from "@/lib/ai";
 import { defaultItineraryDate } from "@/lib/automation";
 import { useStore } from "@/lib/store";
 import { Idea, IdeaCategory, IdeaStatus, Trip } from "@/lib/types";
 import { fmtMoney, uid } from "@/lib/utils";
-import { Badge, EmptyState, Field } from "@/components/ui";
+import { Badge, EmptyState, Field, Modal } from "@/components/ui";
+
+interface GeneratedIdea {
+  title: string;
+  category: IdeaCategory;
+  notes: string | null;
+  estCost: number | null;
+}
 
 const CATEGORIES: IdeaCategory[] = ["place", "activity", "food", "stay", "transport", "other"];
 const CATEGORY_EMOJI: Record<IdeaCategory, string> = {
@@ -33,6 +41,67 @@ export function IdeasTab({ trip }: { trip: Trip }) {
   const [url, setUrl] = useState("");
   const [estCost, setEstCost] = useState("");
   const [filter, setFilter] = useState<IdeaStatus | "all">("all");
+
+  const [generating, setGenerating] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [suggestions, setSuggestions] = useState<GeneratedIdea[] | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const aiAvailable = data.settings.aiEnabled && data.settings.apiKey;
+
+  const generate = async () => {
+    setGenerating(true);
+    setAiError("");
+    try {
+      const res = await aiRequest<{ ideas: GeneratedIdea[] }>(
+        "generate-ideas",
+        data.settings.apiKey,
+        {
+          trip: {
+            name: trip.name,
+            destination: trip.destination,
+            startDate: trip.startDate,
+            endDate: trip.endDate,
+            travelers: trip.travelers,
+            budget: trip.budget,
+            currency: trip.currency,
+            notes: trip.notes,
+          },
+          profile: data.settings.profile,
+          existingIdeas: ideas.map((i) => i.title),
+          planned: [
+            ...data.bookings
+              .filter((b) => b.tripId === trip.id && b.status !== "cancelled")
+              .map((b) => b.title),
+            ...data.itinerary.filter((i) => i.tripId === trip.id).map((i) => i.title),
+          ],
+        }
+      );
+      setSuggestions(res.ideas);
+      setPicked(new Set(res.ideas.map((_, i) => i)));
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Couldn't generate ideas");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const addPicked = () => {
+    if (!suggestions) return;
+    const fresh: Idea[] = suggestions
+      .filter((_, i) => picked.has(i))
+      .map((s) => ({
+        id: uid(),
+        tripId: trip.id,
+        title: s.title,
+        category: s.category,
+        notes: s.notes || undefined,
+        estCost: s.estCost ?? undefined,
+        status: "new" as IdeaStatus,
+        createdAt: new Date().toISOString(),
+      }));
+    if (fresh.length > 0) update((d) => ({ ...d, ideas: [...fresh, ...d.ideas] }));
+    setSuggestions(null);
+  };
 
   const add = () => {
     if (!title.trim()) return;
@@ -113,7 +182,7 @@ export function IdeasTab({ trip }: { trip: Trip }) {
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         {(["all", "new", "shortlisted", "approved", "rejected"] as const).map((s) => (
           <button
             key={s}
@@ -123,7 +192,13 @@ export function IdeasTab({ trip }: { trip: Trip }) {
             {s === "all" ? `All (${ideas.length})` : `${s} (${ideas.filter((i) => i.status === s).length})`}
           </button>
         ))}
+        {aiAvailable && (
+          <button className="btn-secondary ml-auto text-xs" onClick={generate} disabled={generating}>
+            {generating ? "Thinking…" : "✨ Suggest ideas for this trip"}
+          </button>
+        )}
       </div>
+      {aiError && <p className="text-sm text-red-600">{aiError}</p>}
 
       {visible.length === 0 ? (
         <EmptyState
@@ -182,6 +257,50 @@ export function IdeasTab({ trip }: { trip: Trip }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {suggestions && (
+        <Modal title="✨ Ideas for this trip" onClose={() => setSuggestions(null)} wide>
+          <p className="mb-3 text-sm text-ink-500">
+            Based on {trip.destination}, your dates, budget, and traveler profile.
+            Uncheck anything that doesn&apos;t appeal.
+          </p>
+          <ul className="max-h-96 space-y-2 overflow-y-auto">
+            {suggestions.map((s, i) => (
+              <li key={i} className="flex items-start gap-2 rounded-lg border border-ink-200 p-2.5">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={picked.has(i)}
+                  onChange={() => {
+                    const next = new Set(picked);
+                    if (next.has(i)) next.delete(i);
+                    else next.add(i);
+                    setPicked(next);
+                  }}
+                />
+                <span className="text-lg">{CATEGORY_EMOJI[s.category] || "💭"}</span>
+                <div className="min-w-0 flex-1 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{s.title}</span>
+                    {s.estCost !== null && (
+                      <span className="text-xs text-ink-400">~{fmtMoney(s.estCost, trip.currency)}</span>
+                    )}
+                  </div>
+                  {s.notes && <p className="text-xs text-ink-500">{s.notes}</p>}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-secondary" onClick={() => setSuggestions(null)}>
+              Discard
+            </button>
+            <button className="btn-primary" onClick={addPicked} disabled={picked.size === 0}>
+              Add {picked.size} idea{picked.size === 1 ? "" : "s"}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

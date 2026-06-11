@@ -53,6 +53,16 @@ export interface DecisionOption {
   notes?: string;
 }
 
+// AI's take on an open decision — persisted so it survives reloads and can
+// be compared against what the traveler ultimately picks.
+export interface DecisionAdvice {
+  recommendedOptionId: string;
+  confidence: "low" | "medium" | "high";
+  summary: string;
+  assessments: Array<{ optionId: string; take: string }>;
+  generatedAt: string;
+}
+
 export interface Decision {
   id: string;
   tripId: string;
@@ -61,6 +71,7 @@ export interface Decision {
   status: "open" | "decided";
   decidedOptionId?: string;
   options: DecisionOption[];
+  ai?: DecisionAdvice;
   createdAt: string;
 }
 

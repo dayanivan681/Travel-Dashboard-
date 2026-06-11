@@ -8,6 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { autoSnapshot } from "./backup";
 import { AppData, EMPTY_DATA, EMPTY_PROFILE } from "./types";
 
 const STORAGE_KEY = "travel-os-data-v1";
@@ -70,6 +71,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // storage full / unavailable — keep running in memory
     }
+    // Automatic recovery snapshot to IndexedDB, debounced so bursts of edits
+    // collapse into one write.
+    const t = setTimeout(() => void autoSnapshot(data), 3000);
+    return () => clearTimeout(t);
   }, [data]);
 
   const update = useCallback((fn: Updater) => {
