@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { aiRequest } from "@/lib/ai";
 import { buildReminders, PHASE_LABEL, PHASE_ORDER, tripPhase } from "@/lib/automation";
 import { useStore } from "@/lib/store";
 import { CHECKLIST_TEMPLATES } from "@/lib/templates";
 import { ChecklistItem, Trip, TripPhase } from "@/lib/types";
-import { CURRENCIES, uid } from "@/lib/utils";
+import { CURRENCIES, todayStr, uid } from "@/lib/utils";
 import { ReminderList } from "@/components/Reminders";
 import { TripCard } from "@/components/TripCard";
 import { EmptyState, Field, Modal } from "@/components/ui";
@@ -44,6 +45,8 @@ export default function Dashboard() {
           + New trip
         </button>
       </div>
+
+      {data.trips.length > 0 && <DigestCard />}
 
       {reminders.length > 0 && (
         <section>
@@ -85,6 +88,92 @@ export default function Dashboard() {
 
       {creating && <NewTripModal onClose={() => setCreating(false)} />}
     </div>
+  );
+}
+
+// AI morning-briefing digest across all trips: what's next, what needs
+// action, budget standouts. Cached in settings until regenerated.
+function DigestCard() {
+  const { data, update } = useStore();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const aiAvailable = data.settings.aiEnabled && data.settings.apiKey;
+  const digest = data.settings.digest;
+
+  if (!aiAvailable && !digest) return null;
+
+  const generate = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const reminders = buildReminders(data).map((r) => `${r.tripName}: ${r.text}`);
+      const trips = data.trips.map((t) => {
+        const bookings = data.bookings.filter(
+          (b) => b.tripId === t.id && b.status !== "cancelled"
+        );
+        const committed = bookings.reduce((s, b) => s + (b.cost || 0), 0);
+        const spent = data.expenses
+          .filter((e) => e.tripId === t.id)
+          .reduce((s, e) => s + e.amount, 0);
+        return {
+          name: t.name,
+          destination: t.destination,
+          phase: tripPhase(t, data.bookings),
+          startDate: t.startDate,
+          endDate: t.endDate,
+          budget: t.budget,
+          currency: t.currency,
+          committedPlusSpent: committed + spent,
+          bookings: bookings.length,
+          itineraryItems: data.itinerary.filter((i) => i.tripId === t.id).length,
+        };
+      });
+      const res = await aiRequest<{ content: string }>("dashboard-digest", data.settings.apiKey, {
+        today: todayStr(),
+        trips,
+        reminders,
+      });
+      update((d) => ({
+        ...d,
+        settings: {
+          ...d.settings,
+          digest: { content: res.content, generatedAt: new Date().toISOString() },
+        },
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't generate the digest");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <section className="card p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">
+          ✨ Your briefing
+        </h2>
+        {aiAvailable && (
+          <button className="btn-ghost text-xs" onClick={generate} disabled={loading}>
+            {loading ? "Thinking…" : digest ? "Refresh" : "Generate"}
+          </button>
+        )}
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {digest ? (
+        <>
+          <p className="whitespace-pre-line text-sm text-ink-700">{digest.content}</p>
+          <p className="mt-2 text-xs text-ink-300">
+            {new Date(digest.generatedAt).toLocaleString()}
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-ink-500">
+          A short morning-briefing across all your trips: what&apos;s coming up,
+          what needs action, and how budgets are tracking.
+        </p>
+      )}
+    </section>
   );
 }
 

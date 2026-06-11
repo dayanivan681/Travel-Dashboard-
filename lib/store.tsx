@@ -8,7 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AppData, EMPTY_DATA } from "./types";
+import { AppData, EMPTY_DATA, EMPTY_PROFILE } from "./types";
 
 const STORAGE_KEY = "travel-os-data-v1";
 
@@ -39,7 +39,11 @@ function migrate(raw: unknown): AppData {
     itinerary: d.itinerary ?? [],
     expenses: d.expenses ?? [],
     checklist: d.checklist ?? [],
-    settings: { ...EMPTY_DATA.settings, ...(d.settings ?? {}) },
+    settings: {
+      ...EMPTY_DATA.settings,
+      ...(d.settings ?? {}),
+      profile: { ...EMPTY_PROFILE, ...(d.settings?.profile ?? {}) },
+    },
   };
 }
 

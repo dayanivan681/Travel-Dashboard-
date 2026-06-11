@@ -16,6 +16,7 @@ export interface Trip {
   notes: string;
   tags: string[];
   retro?: { wins: string; improvements: string };
+  briefing?: { content: string; generatedAt: string };
   createdAt: string;
 }
 
@@ -121,6 +122,7 @@ export interface Expense {
   description: string;
   category: ExpenseCategory;
   amount: number;
+  currency?: string; // ISO code; absent = trip currency
 }
 
 export type ChecklistGroup = "packing" | "documents" | "todo";
@@ -134,10 +136,29 @@ export interface ChecklistItem {
   createdAt: string;
 }
 
+export type TravelPace = "relaxed" | "balanced" | "packed";
+
+export interface TravelerProfile {
+  interests: string[]; // e.g. "food", "art", "hiking", "nightlife"
+  pace: TravelPace;
+  dietary: string; // free text: "vegetarian", "no shellfish", etc.
+  travelStyle: string; // free text: "boutique hotels, avoid tourist traps"
+}
+
+export const EMPTY_PROFILE: TravelerProfile = {
+  interests: [],
+  pace: "balanced",
+  dietary: "",
+  travelStyle: "",
+};
+
 export interface Settings {
   homeCurrency: string;
   aiEnabled: boolean;
   apiKey: string;
+  profile: TravelerProfile;
+  lastBackupAt?: string;
+  digest?: { content: string; generatedAt: string };
 }
 
 export interface AppData {
@@ -161,7 +182,7 @@ export const EMPTY_DATA: AppData = {
   itinerary: [],
   expenses: [],
   checklist: [],
-  settings: { homeCurrency: "USD", aiEnabled: false, apiKey: "" },
+  settings: { homeCurrency: "USD", aiEnabled: false, apiKey: "", profile: { ...EMPTY_PROFILE } },
 };
 
 export interface Reminder {
@@ -185,4 +206,31 @@ export interface ParsedBooking {
   location?: string;
   cost?: number;
   notes?: string;
+}
+
+// Output of the universal AI "capture" action — classifies pasted text
+// (emails, receipts, notes, recommendations) and extracts the matching shape.
+export type CaptureKind = "booking" | "expense" | "idea" | "note";
+
+export interface CapturedExpense {
+  description: string;
+  category: ExpenseCategory;
+  amount: number;
+  date?: string;
+  currency?: string;
+}
+
+export interface CapturedIdea {
+  title: string;
+  category: IdeaCategory;
+  notes?: string;
+  estCost?: number;
+}
+
+export interface CaptureResult {
+  kind: CaptureKind;
+  booking?: ParsedBooking;
+  expense?: CapturedExpense;
+  idea?: CapturedIdea;
+  note?: string;
 }

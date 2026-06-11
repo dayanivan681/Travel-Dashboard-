@@ -31,7 +31,7 @@ export function ReminderList({
       {list.map((r) => (
         <Link
           key={r.id}
-          href={`/trips/${r.tripId}${r.tab ? `?tab=${r.tab}` : ""}`}
+          href={r.tripId ? `/trip?id=${r.tripId}${r.tab ? `&tab=${r.tab}` : ""}` : "/settings"}
           className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-opacity hover:opacity-80 ${SEV_STYLE[r.severity]}`}
         >
           <span>{SEV_ICON[r.severity]}</span>
