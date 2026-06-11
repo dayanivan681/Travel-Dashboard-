@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// Travel OS — Firestore security rules.
+//
+// Each trip is one document at /trips/{tripId}, containing the trip plus all
+// of its ideas, decisions, bookings, itinerary, expenses, and checklist
+// items. Access is controlled by `memberEmails`: a list of up to 5 traveler
+// emails (lowercase) who can read and write the document. The trip's
+// `ownerId` (the creator's Firebase Auth uid) is the only one who can change
+// who's on that list or delete the trip.
+//
+// To deploy: Firebase console → Firestore Database → Rules → paste this →
+// Publish.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /trips/{tripId} {
+      function email() {
+        return request.auth.token.email.lower();
+      }
+
+      function isMember(data) {
+        return request.auth != null && email() in data.memberEmails;
+      }
+
+      function isOwner(data) {
+        return request.auth != null && data.trip.ownerId == request.auth.uid;
+      }
+
+      allow read: if isMember(resource.data);
+
+      // Anyone signed in can create a trip doc, as long as they list
+      // themselves as the owner and a member, and stay within the cap.
+      allow create: if request.auth != null
+        && isOwner(request.resource.data)
+        && isMember(request.resource.data)
+        && request.resource.data.memberEmails.size() <= 5;
+
+      // Members can update trip content, but only the owner can change the
+      // membership list (add/remove travelers) or transfer ownership.
+      allow update: if isMember(resource.data)
+        && request.resource.data.memberEmails.size() <= 5
+        && (
+          request.resource.data.memberEmails == resource.data.memberEmails
+          || isOwner(resource.data)
+        )
+        && request.resource.data.trip.ownerId == resource.data.trip.ownerId;
+
+      allow delete: if isOwner(resource.data);
+    }
+  }
+}

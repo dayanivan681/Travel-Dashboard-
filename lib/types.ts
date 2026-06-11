@@ -18,6 +18,12 @@ export interface Trip {
   retro?: { wins: string; improvements: string };
   briefing?: { content: string; generatedAt: string };
   createdAt: string;
+  // Cloud sync (Phase 2): present once a trip has been synced to Firestore.
+  // ownerId is the creator's uid; memberEmails (lowercased) controls who can
+  // read/write the trip — up to 5 travelers can share a trip this way.
+  ownerId?: string;
+  memberEmails?: string[];
+  updatedAt?: string;
 }
 
 export type IdeaCategory =
@@ -53,6 +59,16 @@ export interface DecisionOption {
   notes?: string;
 }
 
+// AI's take on an open decision — persisted so it survives reloads and can
+// be compared against what the traveler ultimately picks.
+export interface DecisionAdvice {
+  recommendedOptionId: string;
+  confidence: "low" | "medium" | "high";
+  summary: string;
+  assessments: Array<{ optionId: string; take: string }>;
+  generatedAt: string;
+}
+
 export interface Decision {
   id: string;
   tripId: string;
@@ -61,6 +77,7 @@ export interface Decision {
   status: "open" | "decided";
   decidedOptionId?: string;
   options: DecisionOption[];
+  ai?: DecisionAdvice;
   createdAt: string;
 }
 

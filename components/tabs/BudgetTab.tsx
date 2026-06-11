@@ -6,6 +6,7 @@ import { convertAmount, FxRates, sumExpenses, useFxRates } from "@/lib/fx";
 import { useStore } from "@/lib/store";
 import { Expense, ExpenseCategory, Trip, TripPhase } from "@/lib/types";
 import { CURRENCIES, daysBetween, fmtDate, fmtDateShort, fmtMoney, todayStr, uid } from "@/lib/utils";
+import { EmailSync } from "@/components/EmailSync";
 import { EmptyState, Field, ProgressBar } from "@/components/ui";
 
 const CATEGORIES: ExpenseCategory[] = ["lodging", "transport", "food", "activities", "shopping", "other"];
@@ -51,6 +52,7 @@ export function BudgetTab({ trip }: { trip: Trip }) {
     if (daysIn > 0) perDay = spent / daysIn;
   }
 
+  const [scanningInbox, setScanningInbox] = useState(false);
   const [desc, setDesc] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<ExpenseCategory>("food");
@@ -194,7 +196,15 @@ export function BudgetTab({ trip }: { trip: Trip }) {
         <button className="btn-primary" onClick={add} disabled={!desc.trim() || !amount}>
           Add
         </button>
+        <button
+          className="btn-secondary"
+          onClick={() => setScanningInbox(true)}
+          title="Pull receipts and invoices from your Gmail"
+        >
+          📬 Scan inbox
+        </button>
       </div>
+      {scanningInbox && <EmailSync trip={trip} onClose={() => setScanningInbox(false)} />}
 
       {expenses.length === 0 ? (
         <EmptyState

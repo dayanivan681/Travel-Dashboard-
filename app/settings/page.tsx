@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { aiRequest } from "@/lib/ai";
+import { useAuth } from "@/lib/authContext";
+import { getSnapshotData, listSnapshots, SnapshotMeta } from "@/lib/backup";
 import { useStore } from "@/lib/store";
 import { CURRENCIES } from "@/lib/utils";
 import { Field } from "@/components/ui";
@@ -68,6 +70,8 @@ export default function SettingsPage() {
           </select>
         </Field>
       </section>
+
+      <CloudSyncSection />
 
       <section className="card space-y-3 p-5">
         <h2 className="font-semibold">🧳 Traveler profile</h2>
@@ -223,6 +227,119 @@ export default function SettingsPage() {
             : "No backup taken yet — export one to keep your trips safe."}
         </p>
       </section>
+
+      <SnapshotsSection />
     </div>
+  );
+}
+
+// Cloud sync status. Sign-in itself happens via the account menu in the
+// header — this section just explains what it does and shows current state.
+function CloudSyncSection() {
+  const { user, authReady, firebaseEnabled } = useAuth();
+  const { data, hydrated } = useStore();
+
+  if (!firebaseEnabled) return null;
+
+  const synced = hydrated ? data.trips.filter((t) => t.memberEmails).length : 0;
+
+  return (
+    <section className="card space-y-2 p-5">
+      <h2 className="font-semibold">☁️ Cloud sync &amp; sharing</h2>
+      {!authReady ? null : user ? (
+        <>
+          <p className="text-sm text-ink-500">
+            Signed in as <span className="font-medium text-ink-700">{user.email}</span>. Your
+            trips sync automatically across devices — {synced} of {data.trips.length} trip
+            {data.trips.length === 1 ? "" : "s"} synced so far.
+          </p>
+          <p className="text-sm text-ink-500">
+            Open any trip and use <span className="font-medium">👥 Share</span> to invite up to
+            5 travelers by email — they&apos;ll see and edit the same trip once they sign in.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-ink-500">
+          Sign in (top right) to back up your trips to the cloud, sync them across devices, and
+          share a trip with up to 5 travelers.
+        </p>
+      )}
+    </section>
+  );
+}
+
+// Automatic recovery snapshots, written to IndexedDB as you work. Restoring
+// replaces the current data with the snapshot's contents.
+function SnapshotsSection() {
+  const { importJson } = useStore();
+  const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([]);
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+
+  const refresh = () => listSnapshots().then(setSnapshots);
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const restore = async (takenAt: string) => {
+    const data = await getSnapshotData(takenAt);
+    setConfirming(null);
+    if (!data) {
+      setMessage("Couldn't read that snapshot.");
+      return;
+    }
+    const result = importJson(JSON.stringify(data));
+    setMessage(
+      result.ok
+        ? `Restored snapshot from ${new Date(takenAt).toLocaleString()}.`
+        : result.error || "Restore failed."
+    );
+  };
+
+  return (
+    <section className="card space-y-3 p-5">
+      <h2 className="font-semibold">🛟 Automatic snapshots</h2>
+      <p className="text-sm text-ink-500">
+        Travel OS quietly saves recovery snapshots in this browser as you
+        work. If something goes wrong — a bad import, an accidental delete —
+        restore from here. (Clearing all browser data removes these too;
+        the export above is the off-device backup.)
+      </p>
+      {snapshots.length === 0 ? (
+        <p className="text-sm text-ink-400">
+          No snapshots yet — they appear automatically once you have trip data.
+        </p>
+      ) : (
+        <ul className="divide-y divide-ink-100">
+          {snapshots.slice(0, 8).map((s) => (
+            <li key={s.takenAt} className="flex items-center justify-between gap-2 py-2 text-sm">
+              <div>
+                <div className="font-medium">{new Date(s.takenAt).toLocaleString()}</div>
+                <div className="text-xs text-ink-400">
+                  {s.trips} trip{s.trips === 1 ? "" : "s"} · {s.bookings} booking
+                  {s.bookings === 1 ? "" : "s"} · {s.expenses} expense{s.expenses === 1 ? "" : "s"}
+                </div>
+              </div>
+              {confirming === s.takenAt ? (
+                <span className="flex items-center gap-2">
+                  <span className="text-xs text-red-600">Replace current data?</span>
+                  <button className="btn-danger text-xs" onClick={() => restore(s.takenAt)}>
+                    Yes, restore
+                  </button>
+                  <button className="btn-ghost text-xs" onClick={() => setConfirming(null)}>
+                    No
+                  </button>
+                </span>
+              ) : (
+                <button className="btn-secondary text-xs" onClick={() => setConfirming(s.takenAt)}>
+                  Restore
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {message && <p className="text-sm text-ink-600">{message}</p>}
+    </section>
   );
 }

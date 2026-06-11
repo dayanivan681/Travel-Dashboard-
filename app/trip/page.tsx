@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { PHASE_LABEL, tripPhase } from "@/lib/automation";
+import { useAuth } from "@/lib/authContext";
+import { deleteCloudTrip, MAX_TRIP_MEMBERS } from "@/lib/cloudSync";
 import { useStore } from "@/lib/store";
 import { Trip, TripPhase } from "@/lib/types";
 import { CURRENCIES, fmtDate } from "@/lib/utils";
@@ -59,6 +61,8 @@ function TripPageInner() {
   );
   const [editing, setEditing] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const { user, firebaseEnabled } = useAuth();
 
   if (!hydrated) return null;
 
@@ -102,6 +106,11 @@ function TripPageInner() {
           <button className="btn-primary" onClick={() => setCapturing(true)}>
             ✨ Quick add
           </button>
+          {firebaseEnabled && user && (
+            <button className="btn-secondary" onClick={() => setSharing(true)}>
+              👥 Share
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => setEditing(true)}>
             Edit trip
           </button>
@@ -143,7 +152,109 @@ function TripPageInner() {
         />
       )}
       {capturing && <QuickCapture trip={trip} onClose={() => setCapturing(false)} />}
+      {sharing && <ShareModal trip={trip} onClose={() => setSharing(false)} />}
     </div>
+  );
+}
+
+function ShareModal({ trip, onClose }: { trip: Trip; onClose: () => void }) {
+  const { update } = useStore();
+  const { user } = useAuth();
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+
+  const members = trip.memberEmails || [];
+  const isOwner = !trip.ownerId || trip.ownerId === user?.uid;
+
+  const addMember = () => {
+    const next = email.trim().toLowerCase();
+    if (!next) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) {
+      setError("That doesn't look like a valid email.");
+      return;
+    }
+    if (members.includes(next)) {
+      setError("Already shared with that email.");
+      return;
+    }
+    if (members.length >= MAX_TRIP_MEMBERS) {
+      setError(`Trips can be shared with up to ${MAX_TRIP_MEMBERS} travelers.`);
+      return;
+    }
+    setError("");
+    update((d) => ({
+      ...d,
+      trips: d.trips.map((t) =>
+        t.id === trip.id ? { ...t, memberEmails: [...members, next] } : t
+      ),
+    }));
+    setEmail("");
+  };
+
+  const removeMember = (target: string) =>
+    update((d) => ({
+      ...d,
+      trips: d.trips.map((t) =>
+        t.id === trip.id ? { ...t, memberEmails: members.filter((m) => m !== target) } : t
+      ),
+    }));
+
+  return (
+    <Modal title={`Share "${trip.name}"`} onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-ink-500">
+          Anyone you add can view and edit this trip — its ideas, bookings, budget, and
+          itinerary — when they sign in with that email. Up to {MAX_TRIP_MEMBERS} travelers
+          total.
+        </p>
+        {!trip.memberEmails && (
+          <p className="text-sm text-amber-600">
+            This trip isn&apos;t synced to the cloud yet — it&apos;ll be set up automatically
+            within a few seconds.
+          </p>
+        )}
+        <ul className="space-y-1">
+          {members.map((m) => (
+            <li key={m} className="flex items-center justify-between gap-2 rounded-lg border border-ink-200 px-3 py-1.5 text-sm">
+              <span>
+                {m}
+                {trip.ownerId && user?.email?.toLowerCase() === m && trip.ownerId === user.uid && (
+                  <span className="ml-1 text-xs text-ink-400">(you, owner)</span>
+                )}
+              </span>
+              {isOwner && members.length > 1 && m !== user?.email?.toLowerCase() && (
+                <button className="btn-ghost px-1 text-xs text-red-400" onClick={() => removeMember(m)}>
+                  ✕
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+        {isOwner && members.length < MAX_TRIP_MEMBERS && (
+          <Field label="Invite by email">
+            <div className="flex gap-2">
+              <input
+                type="email"
+                className="input flex-1"
+                placeholder="travelbuddy@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addMember()}
+              />
+              <button className="btn-primary" onClick={addMember}>
+                Invite
+              </button>
+            </div>
+          </Field>
+        )}
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end pt-2">
+          <button className="btn-secondary" onClick={onClose}>
+            Done
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -157,6 +268,7 @@ function EditTripModal({
   onDeleted: () => void;
 }) {
   const { update } = useStore();
+  const { user } = useAuth();
   const [name, setName] = useState(trip.name);
   const [destination, setDestination] = useState(trip.destination);
   const [startDate, setStartDate] = useState(trip.startDate || "");
@@ -186,6 +298,7 @@ function EditTripModal({
   };
 
   const deleteTrip = () => {
+    if (trip.ownerId && trip.ownerId === user?.uid) void deleteCloudTrip(trip.id);
     update((d) => ({
       ...d,
       trips: d.trips.filter((t) => t.id !== trip.id),

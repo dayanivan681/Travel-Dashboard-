@@ -133,6 +133,199 @@ const CAPTURE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const IDEAS_SCHEMA = {
+  type: "object",
+  properties: {
+    ideas: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          category: {
+            type: "string",
+            enum: ["place", "activity", "food", "stay", "transport", "other"],
+          },
+          notes: {
+            type: ["string", "null"],
+            description: "One line: what it is and why it fits this specific trip and traveler",
+          },
+          estCost: {
+            type: ["number", "null"],
+            description: "Rough cost per person in the trip currency; null if free or unknown",
+          },
+        },
+        required: ["title", "category", "notes", "estCost"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["ideas"],
+  additionalProperties: false,
+} as const;
+
+const DECISION_SCHEMA = {
+  type: "object",
+  properties: {
+    recommendedOptionId: { type: "string", description: "id of the winning option" },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    summary: {
+      type: "string",
+      description: "2-4 sentences: why this option wins for this trip, weighing cost, logistics, schedule fit, traveler preferences, and risk",
+    },
+    assessments: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          optionId: { type: "string" },
+          take: { type: "string", description: "One-line verdict on this option" },
+        },
+        required: ["optionId", "take"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["recommendedOptionId", "confidence", "summary", "assessments"],
+  additionalProperties: false,
+} as const;
+
+const BOOKINGS_REVIEW_SCHEMA = {
+  type: "object",
+  properties: {
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          severity: { type: "string", enum: ["urgent", "warn", "info"] },
+          text: { type: "string", description: "One concrete, specific finding" },
+          bookingTitle: {
+            type: ["string", "null"],
+            description: "Exact title of the booking this concerns, or null if it spans the whole trip",
+          },
+        },
+        required: ["severity", "text", "bookingTitle"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["findings"],
+  additionalProperties: false,
+} as const;
+
+const ORGANIZE_SCHEMA = {
+  type: "object",
+  properties: {
+    schedule: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          itemId: { type: "string", description: "id of an existing movable itinerary item" },
+          date: { type: "string", description: "YYYY-MM-DD within the trip" },
+          startTime: { type: ["string", "null"], description: "HH:MM 24h, null for flexible" },
+          tip: {
+            type: ["string", "null"],
+            description: "Short reason if the item moved, or timing advice (opening hours, crowds, transit)",
+          },
+        },
+        required: ["itemId", "date", "startTime", "tip"],
+        additionalProperties: false,
+      },
+    },
+    advice: {
+      type: "array",
+      items: { type: "string" },
+      description: "Up to 5 short logistics observations about the overall plan",
+    },
+  },
+  required: ["schedule", "advice"],
+  additionalProperties: false,
+} as const;
+
+const CHECKLIST_GEN_SCHEMA = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Short actionable item" },
+          group: { type: "string", enum: ["packing", "documents", "todo"] },
+        },
+        required: ["text", "group"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
+  additionalProperties: false,
+} as const;
+
+const EMAIL_SCAN_SCHEMA = {
+  type: "object",
+  properties: {
+    results: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          emailIndex: { type: "number", description: "Index of the email in the input list" },
+          kind: {
+            type: "string",
+            enum: ["booking", "expense", "skip"],
+            description:
+              "'booking' for a reservation confirmation or schedule change (flight, hotel, car, train, activity, restaurant); 'expense' for a receipt/invoice for a payment already made that is NOT itself a reservation; 'skip' for marketing, newsletters, unrelated mail, or duplicates of existing bookings.",
+          },
+          booking: {
+            type: ["object", "null"],
+            properties: {
+              type: {
+                type: "string",
+                enum: ["flight", "hotel", "car", "train", "activity", "restaurant", "other"],
+              },
+              title: { type: "string" },
+              provider: { type: ["string", "null"] },
+              confirmationCode: { type: ["string", "null"] },
+              start: { type: ["string", "null"], description: "YYYY-MM-DD or YYYY-MM-DDTHH:MM" },
+              end: { type: ["string", "null"] },
+              location: { type: ["string", "null"] },
+              cost: { type: ["number", "null"] },
+              notes: {
+                type: ["string", "null"],
+                description: "Key details; if this is a schedule change, start with 'Schedule change:'",
+              },
+            },
+            required: ["type", "title", "provider", "confirmationCode", "start", "end", "location", "cost", "notes"],
+            additionalProperties: false,
+          },
+          expense: {
+            type: ["object", "null"],
+            properties: {
+              description: { type: "string" },
+              category: {
+                type: "string",
+                enum: ["lodging", "transport", "food", "activities", "shopping", "other"],
+              },
+              amount: { type: "number" },
+              date: { type: ["string", "null"], description: "YYYY-MM-DD" },
+              currency: { type: ["string", "null"], description: "ISO 4217 code if identifiable" },
+            },
+            required: ["description", "category", "amount", "date", "currency"],
+            additionalProperties: false,
+          },
+        },
+        required: ["emailIndex", "kind", "booking", "expense"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["results"],
+  additionalProperties: false,
+} as const;
+
 function makeClient(apiKey: string): Anthropic {
   return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 }
@@ -193,6 +386,33 @@ export async function aiRequest<T = unknown>(
           ],
         });
         return { booking: JSON.parse(textOf(response)) } as T;
+      }
+
+      case "scan-emails": {
+        const emails = payload?.emails as Array<{ subject: string; from: string; date: string; body: string }> | undefined;
+        if (!emails?.length) throw new Error("No emails to scan");
+        const trip = payload?.trip as Record<string, unknown> | undefined;
+        const emailList = emails
+          .map(
+            (e, i) =>
+              `--- EMAIL ${i} ---\nFrom: ${e.from}\nDate: ${e.date}\nSubject: ${e.subject}\n\n${e.body.slice(0, 4000)}`
+          )
+          .join("\n\n");
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 16000,
+          thinking: { type: "adaptive" },
+          system:
+            "You scan a traveler's emails for items relevant to one specific trip. For each email decide: 'booking' if it confirms or changes a reservation (flight, hotel, car, train, activity, restaurant) relevant to this trip; 'expense' if it's a receipt or invoice for a trip-related payment that isn't itself a reservation; 'skip' for marketing, newsletters, mail unrelated to this trip's destination/dates, or emails whose confirmation code matches an already-imported booking. Only extract fields explicitly supported by the email text — use null for anything absent. Dates are local time, formatted YYYY-MM-DD or YYYY-MM-DDTHH:MM. Cost/amount is the grand total. Return one result per email, in order.",
+          output_config: { format: { type: "json_schema", schema: EMAIL_SCAN_SCHEMA } },
+          messages: [
+            {
+              role: "user",
+              content: `Trip: ${JSON.stringify(trip ?? {})}\n\nConfirmation codes already imported (mark matching emails as 'skip'): ${JSON.stringify(payload?.existingCodes ?? [])}\n\nEmails to scan:\n\n${emailList}`,
+            },
+          ],
+        });
+        return JSON.parse(textOf(response)) as T;
       }
 
       case "suggest-itinerary": {
@@ -315,6 +535,102 @@ export async function aiRequest<T = unknown>(
           ],
         });
         return { insights: textOf(response) } as T;
+      }
+
+      case "generate-ideas": {
+        const trip = payload?.trip;
+        if (!trip) throw new Error("Missing trip");
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 4096,
+          thinking: { type: "adaptive" },
+          system:
+            "You are a sharp local-savvy travel curator. Suggest 6-10 specific, real ideas (named places, restaurants, activities, day trips) for this trip. Ground every suggestion in the trip's destination, dates/season, budget, group size, and the traveler's profile. Skip anything already on their lists or booked. Prefer a mix of categories and at least a couple of non-obvious picks a guidebook's first page wouldn't lead with. Costs are rough per-person figures in the trip currency.",
+          output_config: { format: { type: "json_schema", schema: IDEAS_SCHEMA } },
+          messages: [
+            {
+              role: "user",
+              content: `Trip: ${JSON.stringify(trip)}\n\nTraveler profile: ${JSON.stringify(payload?.profile ?? {})}\n\nAlready on their idea list (do not repeat): ${JSON.stringify(payload?.existingIdeas ?? [])}\n\nAlready booked or planned (do not repeat): ${JSON.stringify(payload?.planned ?? [])}`,
+            },
+          ],
+        });
+        return JSON.parse(textOf(response)) as T;
+      }
+
+      case "recommend-decision": {
+        const decision = payload?.decision;
+        if (!decision) throw new Error("Missing decision");
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 4096,
+          thinking: { type: "adaptive" },
+          system:
+            "You help a traveler pick between competing options for their trip. Weigh real trade-offs: total cost against the trip budget, logistics and schedule fit with existing bookings, the stated pros/cons and ratings, the traveler's preferences, and risk (refundability, tight connections, weather exposure). Commit to one recommendation — no fence-sitting — and be honest about confidence. Reference option ids exactly as given.",
+          output_config: { format: { type: "json_schema", schema: DECISION_SCHEMA } },
+          messages: [
+            {
+              role: "user",
+              content: `Decision to make: ${JSON.stringify(decision)}\n\nTrip context: ${JSON.stringify(payload?.trip ?? {})}\n\nExisting bookings (for schedule/logistics fit): ${JSON.stringify(payload?.bookings ?? [])}\n\nTraveler profile: ${JSON.stringify(payload?.profile ?? {})}`,
+            },
+          ],
+        });
+        return { advice: JSON.parse(textOf(response)) } as T;
+      }
+
+      case "review-bookings": {
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 4096,
+          thinking: { type: "adaptive" },
+          system:
+            "You audit a trip's bookings like a meticulous travel agent. Find concrete problems and gaps: nights with no lodging between arrival and departure, arrival/departure days with no transport, missing details that matter (no confirmation code, no time, no cost), unpaid or still-pending reservations, date overlaps or impossible sequences, and bookings that don't fit the trip dates. Compare committed costs to the budget if one is set. Every finding must be specific and verifiable from the data — never invent problems, and return an empty list if everything genuinely checks out. Severity: 'urgent' = will break the trip, 'warn' = needs action soon, 'info' = worth knowing.",
+          output_config: { format: { type: "json_schema", schema: BOOKINGS_REVIEW_SCHEMA } },
+          messages: [
+            {
+              role: "user",
+              content: `Today is ${String(payload?.today)}.\n\nTrip: ${JSON.stringify(payload?.trip ?? {})}\n\nBookings: ${JSON.stringify(payload?.bookings ?? [])}`,
+            },
+          ],
+        });
+        return JSON.parse(textOf(response)) as T;
+      }
+
+      case "organize-itinerary": {
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 8192,
+          thinking: { type: "adaptive" },
+          system:
+            "You optimize an existing day-by-day travel itinerary. Re-time and re-date only the movable items to minimize backtracking (group by neighborhood), respect typical opening hours and meal times, balance daily load to the traveler's pace, and fit cleanly around the fixed items (flights, check-ins, reservations) which you must NOT move or include in your schedule output. Keep every movable item — never drop one — and keep dates within the trip range. Only output a tip where there's a genuine reason (moved it, timing matters, book ahead).",
+          output_config: { format: { type: "json_schema", schema: ORGANIZE_SCHEMA } },
+          messages: [
+            {
+              role: "user",
+              content: `Trip: ${JSON.stringify(payload?.trip ?? {})}\n\nTraveler profile: ${JSON.stringify(payload?.profile ?? {})}\n\nFixed items (do not move, plan around them): ${JSON.stringify(payload?.fixed ?? [])}\n\nMovable items (re-time/re-date these, keep all of them): ${JSON.stringify(payload?.movable ?? [])}`,
+            },
+          ],
+        });
+        return JSON.parse(textOf(response)) as T;
+      }
+
+      case "generate-checklist": {
+        const trip = payload?.trip;
+        if (!trip) throw new Error("Missing trip");
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: 4096,
+          thinking: { type: "adaptive" },
+          system:
+            "You build practical pre-trip checklists tailored to a specific trip — never generic filler. Derive items from the destination (entry documents, plug adapters, local payment norms), the dates and season (clothing, weather gear), the planned activities and bookings (gear, tickets to pre-book, check-in tasks), the group size, and the traveler's profile (dietary, medical, style). 12-25 items across the three groups: 'packing' for things to bring, 'documents' for paperwork and money, 'todo' for tasks to complete before departure. Skip anything already on their checklist. Each item short and actionable.",
+          output_config: { format: { type: "json_schema", schema: CHECKLIST_GEN_SCHEMA } },
+          messages: [
+            {
+              role: "user",
+              content: `Trip: ${JSON.stringify(trip)}\n\nTraveler profile: ${JSON.stringify(payload?.profile ?? {})}\n\nPlanned activities and bookings: ${JSON.stringify(payload?.planned ?? [])}\n\nAlready on the checklist (do not repeat): ${JSON.stringify(payload?.existing ?? [])}`,
+            },
+          ],
+        });
+        return JSON.parse(textOf(response)) as T;
       }
 
       default:

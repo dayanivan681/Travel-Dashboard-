@@ -21,6 +21,16 @@ interface AiPlanDay {
   }>;
 }
 
+interface OrganizeResult {
+  schedule: Array<{
+    itemId: string;
+    date: string;
+    startTime: string | null;
+    tip: string | null;
+  }>;
+  advice: string[];
+}
+
 export function ItineraryTab({ trip }: { trip: Trip }) {
   const { data, update } = useStore();
   const items = data.itinerary.filter((i) => i.tripId === trip.id);
@@ -28,8 +38,10 @@ export function ItineraryTab({ trip }: { trip: Trip }) {
 
   const [adding, setAdding] = useState<string | null>(null); // date being added to
   const [suggesting, setSuggesting] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiPlan, setAiPlan] = useState<AiPlanDay[] | null>(null);
+  const [orgResult, setOrgResult] = useState<OrganizeResult | null>(null);
 
   const aiAvailable = data.settings.aiEnabled && data.settings.apiKey;
 
@@ -95,6 +107,56 @@ export function ItineraryTab({ trip }: { trip: Trip }) {
     }
   };
 
+  // The optimizer re-times/re-dates the movable (non-booking) items around the
+  // fixed ones — minimizing backtracking, respecting opening hours and pace.
+  const movable = items.filter((i) => !i.bookingId);
+
+  const organize = async () => {
+    setOrganizing(true);
+    setAiError("");
+    try {
+      const res = await aiRequest<OrganizeResult>("organize-itinerary", data.settings.apiKey, {
+        trip: {
+          destination: trip.destination,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          travelers: trip.travelers,
+        },
+        profile: data.settings.profile,
+        fixed: items
+          .filter((i) => i.bookingId)
+          .map((i) => ({ date: i.date, startTime: i.startTime, title: i.title, type: i.type, location: i.location })),
+        movable: movable.map((i) => ({
+          id: i.id,
+          date: i.date,
+          startTime: i.startTime,
+          title: i.title,
+          type: i.type,
+          location: i.location,
+        })),
+      });
+      setOrgResult(res);
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Optimization failed");
+    } finally {
+      setOrganizing(false);
+    }
+  };
+
+  const applyOrganized = () => {
+    if (!orgResult) return;
+    const byId = new Map(orgResult.schedule.map((s) => [s.itemId, s]));
+    update((d) => ({
+      ...d,
+      itinerary: d.itinerary.map((i) => {
+        const s = byId.get(i.id);
+        if (!s || i.bookingId || i.tripId !== trip.id) return i;
+        return { ...i, date: s.date, startTime: s.startTime || undefined };
+      }),
+    }));
+    setOrgResult(null);
+  };
+
   const acceptPlan = () => {
     if (!aiPlan) return;
     const newItems: ItineraryItem[] = aiPlan.flatMap((day) =>
@@ -127,13 +189,20 @@ export function ItineraryTab({ trip }: { trip: Trip }) {
   return (
     <div className="space-y-4">
       {aiAvailable && (
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-ink-500">
             Bookings appear automatically. Add your own plans per day.
           </p>
-          <button className="btn-secondary" onClick={suggest} disabled={suggesting}>
-            {suggesting ? "Thinking…" : "✨ AI: fill the empty days"}
-          </button>
+          <div className="flex gap-2">
+            {movable.length > 1 && (
+              <button className="btn-secondary" onClick={organize} disabled={organizing}>
+                {organizing ? "Optimizing…" : "🧭 Optimize schedule"}
+              </button>
+            )}
+            <button className="btn-secondary" onClick={suggest} disabled={suggesting}>
+              {suggesting ? "Thinking…" : "✨ AI: fill the empty days"}
+            </button>
+          </div>
         </div>
       )}
       {aiError && <p className="text-sm text-red-600">{aiError}</p>}
@@ -191,6 +260,66 @@ export function ItineraryTab({ trip }: { trip: Trip }) {
           tripId={trip.id}
           onClose={() => setAdding(null)}
         />
+      )}
+
+      {orgResult && (
+        <Modal title="🧭 Optimized schedule" onClose={() => setOrgResult(null)} wide>
+          {orgResult.advice.length > 0 && (
+            <ul className="mb-3 space-y-1 rounded-lg bg-ink-50 p-3 text-sm text-ink-600">
+              {orgResult.advice.map((a, i) => (
+                <li key={i}>• {a}</li>
+              ))}
+            </ul>
+          )}
+          <div className="max-h-80 overflow-y-auto">
+            {(() => {
+              const byId = new Map(items.map((i) => [i.id, i]));
+              const moves = orgResult.schedule.filter((s) => {
+                const cur = byId.get(s.itemId);
+                return (
+                  cur &&
+                  !cur.bookingId &&
+                  (cur.date !== s.date || (cur.startTime || null) !== s.startTime)
+                );
+              });
+              if (moves.length === 0) {
+                return (
+                  <p className="text-sm text-emerald-700">
+                    ✓ Your current schedule already looks well organized — nothing to move.
+                  </p>
+                );
+              }
+              return (
+                <ul className="space-y-1.5 text-sm">
+                  {moves.map((s) => {
+                    const cur = byId.get(s.itemId)!;
+                    return (
+                      <li key={s.itemId} className="rounded-lg border border-ink-200 px-3 py-2">
+                        <span className="font-medium">{cur.title}</span>
+                        <span className="text-ink-500">
+                          {" "}
+                          · {fmtDateShort(cur.date)} {cur.startTime || ""} →{" "}
+                          <span className="font-medium text-ink-700">
+                            {fmtDateShort(s.date)} {s.startTime || "flexible"}
+                          </span>
+                        </span>
+                        {s.tip && <p className="text-xs text-ink-400">{s.tip}</p>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              );
+            })()}
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <button className="btn-secondary" onClick={() => setOrgResult(null)}>
+              Keep as is
+            </button>
+            <button className="btn-primary" onClick={applyOrganized}>
+              Apply changes
+            </button>
+          </div>
+        </Modal>
       )}
 
       {aiPlan && (
