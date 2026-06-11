@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { PHASE_LABEL, tripPhase } from "@/lib/automation";
 import { useStore } from "@/lib/store";
@@ -37,10 +37,10 @@ export default function TripPage() {
 }
 
 function TripPageInner() {
-  const params = useParams<{ id: string }>();
   const search = useSearchParams();
   const router = useRouter();
   const { data, hydrated } = useStore();
+  const tripId = search.get("id");
 
   const requested = search.get("tab") as TabKey | null;
   const [tab, setTab] = useState<TabKey>(
@@ -50,7 +50,7 @@ function TripPageInner() {
 
   if (!hydrated) return null;
 
-  const trip = data.trips.find((t) => t.id === params.id);
+  const trip = data.trips.find((t) => t.id === tripId);
   if (!trip) {
     return (
       <div className="py-12 text-center">

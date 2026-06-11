@@ -37,7 +37,7 @@ export function TripCard({ trip, data }: { trip: Trip; data: AppData }) {
   }
 
   return (
-    <Link href={`/trips/${trip.id}`} className="card block p-4 transition-shadow hover:shadow-md">
+    <Link href={`/trip?id=${trip.id}`} className="card block p-4 transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-2xl">{trip.emoji}</span>
