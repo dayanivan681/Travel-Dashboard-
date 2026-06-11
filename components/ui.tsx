@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export function Modal({
   title,
@@ -19,7 +20,14 @@ export function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  // Portal to <body> so the fixed-position backdrop isn't constrained by an
+  // ancestor with a backdrop-filter (e.g. the header), which would otherwise
+  // create a containing block and mis-position the modal.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       className="anim-backdrop fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/40 p-4 pt-[8vh] backdrop-blur-[2px]"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
@@ -33,7 +41,8 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
